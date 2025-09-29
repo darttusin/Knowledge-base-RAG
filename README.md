@@ -37,15 +37,15 @@ Query → Preprocess → Retrieve: [BM25 ∥ Dense] → RRF → Re‑rank → Co
 
 ### 2) Индексация и хранение
 
-* FAISS + parquet/duckdb для метаданных
-* Снапшоты индекса (dvc/git‑lfs)
+* FAISS + бд для метаданных
+* Снапшоты индекса
 
 ### 3) Retrieval
 
-* BM25 (k1=0.9, b=0.4) как baseline
-* Dense: BGE‑small, нормализация (`L2`), Inner Product
-* Fusion: RRF(weighted), k_dense=100, k_bm25=100 → top40
-* Аналитика влияния k/overlap/фильтров
+* BM25
+* BERT
+* Dense
+* Fusion
 
 ### 4) Rerank
 
@@ -54,13 +54,12 @@ Query → Preprocess → Retrieve: [BM25 ∥ Dense] → RRF → Re‑rank → Co
 ### 5) Генерация
 
 * Формат ответа: кратко, затем пункты с цитатами `[§]` → URL#anchor
-* Стратегии: evidence‑first, max marginal relevance для контекста
 * Ограничения: запрет галлюцинаций вне контекста; если нет контекста — отказ + “где смотреть”
 
 ### 6) Улучшения
 
 * Query‑enhancement: HyDE; docTTTTTquery для лексики; SPLADE/ColBERT как эксперимент
-* Prompt‑tuning: offline APO на dev‑наборе
+* Prompt‑tuning: offline APO на dev‑наборе. LLM as judge
 * Hybrid dens+sparse (BGE‑M3 lexical matching) как альтернатива BM25
 
 ### 7) Сервис и интерфейс

@@ -20,6 +20,7 @@ Query → Preprocess → Retrieve: [BM25 ∥ Dense] → RRF → Re‑rank → Co
 * Аннотация QA:
   * Автоматически: сэмплинг параграфов → генерация вопросов (query2doc/HyDE) → верификация
   * Ручные проверки на 200–300 примерах для dev/test
+* Разбиение текста на части и токенизация
 
 ## Майлстоуны
 
@@ -43,7 +44,6 @@ Query → Preprocess → Retrieve: [BM25 ∥ Dense] → RRF → Re‑rank → Co
 ### 3) Retrieval
 
 * BM25
-* BERT
 * Dense
 * Fusion
 

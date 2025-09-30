@@ -28,6 +28,15 @@ Query → Preprocess → Retrieve: [BM25 ∥ Dense] → RRF → Re‑rank → Co
 * **M1 (ноябрь):** Baseline
 * **M2 (дек):** Telegram‑бот + REST
 
+## Метрики для оценки качества RAG
+
+* LLM as a judge
+* Response latency
+* Precision@K
+* Recall@K
+* MRR
+* BLEU
+
 ## Задачи (детально)
 
 ### 1) Инжест

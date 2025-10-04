@@ -15,6 +15,31 @@ Query → Preprocess → Retrieve: [BM25 ∥ Dense] → RRF → Re‑rank → Co
 
 ## Датасет и EDA
 
+### Stackoverflow QA's dataset
+
+* Link - https://console.cloud.google.com/marketplace/product/stack-exchange/stack-overflow
+* SQL query:
+```sql
+SELECT
+  q.id AS question_id,
+  q.title,
+  q.body AS question_body,
+  q.tags,
+  a.id AS answer_id,
+  a.body AS answer_body,
+  a.score AS answer_score,
+  q.creation_date
+FROM `bigquery-public-data.stackoverflow.posts_questions` AS q
+JOIN `bigquery-public-data.stackoverflow.posts_answers` AS a
+  ON a.id = q.accepted_answer_id
+WHERE
+  REGEXP_CONTAINS(q.tags, r'pytorch') OR
+  REGEXP_CONTAINS(q.tags, r'pytorch-lightning') OR
+  REGEXP_CONTAINS(q.tags, r'torchvision') OR
+  REGEXP_CONTAINS(q.tags, r'torchaudio') OR
+  REGEXP_CONTAINS(q.tags, r'libtorch');
+```
+
 * Источник: документация PyTorch (версии 2.x), вкл. subsections (torch, torchvision, torchtext при необходимости)
 * EDA: частоты терминов, n‑граммы, coverage по разделам, облако слов по модулям; выявление дубликатов/редиректов
 * Аннотация QA:

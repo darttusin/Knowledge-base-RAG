@@ -1,0 +1,26 @@
+[project]
+name = "knowledge-base-rag"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.uv.workspace]
+members = [
+    "torch-parser",
+]
+
+[tool.uv.sources]
+torch-parser = { workspace = true }
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "C90", "I", "S", "BLE", "T20", "ARG", "ERA", "PLR0913"]
+ignore = ["E501", "S104", "C901", "BLE001"]
+
+[tool.ruff.lint.pylint]
+max-args = 7
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "ARG"]
+"scripts/extract_module_templates.py" = ["E402"]
+"scripts/extract_schemas.py" = ["E402"]
+

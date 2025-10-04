@@ -1,0 +1,19 @@
+version = 1
+revision = 3
+requires-python = ">=3.13"
+
+[manifest]
+members = [
+    "knowledge-base-rag",
+    "parser",
+]
+
+[[package]]
+name = "knowledge-base-rag"
+version = "0.1.0"
+source = { virtual = "." }
+
+[[package]]
+name = "parser"
+version = "0.1.0"
+source = { virtual = "parser" }

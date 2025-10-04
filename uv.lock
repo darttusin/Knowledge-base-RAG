@@ -5,7 +5,7 @@ requires-python = ">=3.13"
 [manifest]
 members = [
     "knowledge-base-rag",
-    "parser",
+    "torch-parser",
 ]
 
 [[package]]
@@ -14,6 +14,6 @@ version = "0.1.0"
 source = { virtual = "." }
 
 [[package]]
-name = "parser"
+name = "torch-parser"
 version = "0.1.0"
-source = { virtual = "parser" }
+source = { editable = "torch-parser" }

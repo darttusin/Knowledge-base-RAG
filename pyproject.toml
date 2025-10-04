@@ -24,3 +24,9 @@ max-args = 7
 "scripts/extract_module_templates.py" = ["E402"]
 "scripts/extract_schemas.py" = ["E402"]
 
+[dependency-groups]
+dev = [
+    "black>=25.9.0",
+    "ruff>=0.13.3",
+]
+

@@ -1,13 +1,13 @@
+import os
+import re
 from urllib.parse import urljoin
 
 import httpx
 from bs4 import BeautifulSoup
+from html_to_markdown import convert_to_markdown
 from loguru import logger
 
 from .settings import settings
-
-
-class CannotGetRef(Exception): ...
 
 
 def _get_html_body_by_url(client: httpx.Client, url: str) -> BeautifulSoup:
@@ -19,14 +19,34 @@ def _get_html_body_by_url(client: httpx.Client, url: str) -> BeautifulSoup:
         logger.error(
             f'msg="Cannot get url" {url=} status_code={response.status_code} response={response.text}'
         )
-        raise CannotGetRef
+        return BeautifulSoup("")
 
-    return BeautifulSoup(response.text, features="html.parser")
+    return BeautifulSoup(response.text, features="lxml")
 
 
-def parse_one_page(
-    client: httpx.Client, url: str, index_url: str, already_parsed: list[str]
-):
+def parse_content(client: httpx.Client, url: str) -> str:
+    html = _get_html_body_by_url(client, url)
+
+    article = html.find("article", class_="bd-article", id=False)
+    if not article:
+        logger.warning('msg="article tag not found"')
+        return ""
+
+    md = convert_to_markdown(article.prettify())
+
+    # fix backslashs
+    md = md.replace("\\", "")
+
+    # remove permanentlinks to headers
+    md = re.sub(r"\[#\].+", "", md)
+
+    # fix [[]] for source
+    md = md.replace("[[source]]", "[source]")
+
+    return md
+
+
+def parse_one_page(client: httpx.Client, url: str, index_url: str, path_to_save: str):
     html = _get_html_body_by_url(client=client, url=url)
 
     article = html.find("article", class_="bd-article")
@@ -38,44 +58,45 @@ def parse_one_page(
 
     for a in article.find_all("a"):
         if href := a.get("href"):
-            if (
-                ".html" in href
-                and "https://" not in href
-                and urljoin(index_url, str(href)) not in already_parsed
-            ):
-                parsed_refs[href] = parse_one_page(
-                    client=client,
-                    url=urljoin(index_url, str(href)),
-                    index_url=index_url,
-                    already_parsed=list(parsed_refs.keys())
-                    if not already_parsed
-                    else already_parsed,
-                )
+            if ".html" in href and "https://" not in href:
+                current_ref = urljoin(index_url, str(href))
+
+                with open(
+                    path_to_save + f"{str(href).split('/')[-1].split('.html')[0]}.md",
+                    "w",
+                ) as f:
+                    f.write(parse_content(client, current_ref))
 
     return parsed_refs
 
 
-def parse_python_api(client: httpx.Client, index_url: str):
-    html = _get_html_body_by_url(
-        client=client, url=urljoin(index_url, "pytorch-api.html")
-    )
-
-    main_content = html.find("div", id="python-api")
-    if not main_content:
-        logger.error('msg="Main content not found"')
-        return
-
-    for a_tag in main_content.find_all("a"):
-        if href := a_tag.get("href"):
-            ref = urljoin(index_url, str(href))
-            print(
-                parse_one_page(
-                    client=client, url=ref, index_url=index_url, already_parsed=[]
-                )
-            )
-            break
-
-
 def run_task():
     with httpx.Client() as client:
-        parse_python_api(client=client, index_url=settings.torch_url)
+        html = _get_html_body_by_url(
+            client=client, url=urljoin(settings.torch_url, "pytorch-api.html")
+        )
+
+        article = html.find("article", class_="bd-article")
+        if not article:
+            logger.warning('msg="article tag not found in python api"')
+            return
+
+        div = article.find("div", class_="toctree-wrapper compound")
+        if not div:
+            logger.warning('msg="Not found main div in python api article"')
+            return
+
+        for a_tag in div.find_all("a"):
+            if href := a_tag.get("href"):
+                ref = urljoin(settings.torch_url, str(href))
+                path_to_save = f"{settings.path_to_save}/{str(href).split('.html')[0]}/"
+
+                if not os.path.exists(path_to_save):
+                    os.mkdir(path_to_save)
+
+                parse_one_page(
+                    client=client,
+                    url=ref,
+                    index_url=settings.torch_url,
+                    path_to_save=path_to_save,
+                )

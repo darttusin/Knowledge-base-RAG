@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     )
 
     torch_url: str
+    path_to_save: str
 
 
 settings = Settings()  # type: ignore

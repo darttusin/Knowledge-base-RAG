@@ -20,24 +20,53 @@ Query → Preprocess → Retrieve: [BM25 ∥ Dense] → RRF → Re‑rank → Co
 * Link - https://console.cloud.google.com/marketplace/product/stack-exchange/stack-overflow
 * SQL query:
 ```sql
+DECLARE keywords ARRAY<STRING> DEFAULT [
+  'pytorch','pytorch-lightning','torchvision','torchaudio','torchtext',
+  'libtorch','torchscript','torchserve','pytorch-ignite','pytorch-geometric',
+  'pytorch3d','torchdata','pytorch-dataloader','pytorch-datapipe',
+  'gpytorch','skorch','pytorch-forecasting','torchmetrics','torchrl','torch'
+];
+
+WITH q AS (
+  SELECT id, title, body, tags, accepted_answer_id
+  FROM `bigquery-public-data.stackoverflow.posts_questions`
+),
+a AS (
+  SELECT parent_id, id, body, score, creation_date
+  FROM `bigquery-public-data.stackoverflow.posts_answers`
+),
+q_tags AS (
+  SELECT id, LOWER(tag) AS tag
+  FROM q, UNNEST(REGEXP_EXTRACT_ALL(q.tags, '<([^>]+)>')) AS tag
+)
 SELECT
-  q.id AS question_id,
-  q.title,
   q.body AS question_body,
-  q.tags,
-  a.id AS answer_id,
   a.body AS answer_body,
-  a.score AS answer_score,
-  q.creation_date
-FROM `bigquery-public-data.stackoverflow.posts_questions` AS q
-JOIN `bigquery-public-data.stackoverflow.posts_answers` AS a
-  ON a.id = q.accepted_answer_id
-WHERE
-  REGEXP_CONTAINS(q.tags, r'pytorch') OR
-  REGEXP_CONTAINS(q.tags, r'pytorch-lightning') OR
-  REGEXP_CONTAINS(q.tags, r'torchvision') OR
-  REGEXP_CONTAINS(q.tags, r'torchaudio') OR
-  REGEXP_CONTAINS(q.tags, r'libtorch');
+  a.score AS answer_score
+FROM q
+LEFT JOIN a
+  ON a.parent_id = q.id
+LEFT JOIN q_tags t
+  ON t.id = q.id
+WHERE (
+  t.tag IN UNNEST(keywords)
+  OR EXISTS (
+    SELECT 1
+    FROM UNNEST(keywords) AS kw
+    WHERE REGEXP_CONTAINS(LOWER(q.title), '(^|[^a-z0-9_])' || kw || '([^a-z0-9_]|$)')
+       OR REGEXP_CONTAINS(LOWER(q.body),  '(^|[^a-z0-9_])' || kw || '([^a-z0-9_]|$)')
+  )
+  OR REGEXP_CONTAINS(LOWER(q.title), r'\bpytorch\b')
+  OR REGEXP_CONTAINS(LOWER(q.body),  r'\b(import\s+torch|from\s+torch\s+import|torch\.(nn|cuda|optim|jit|compile|tensor|utils\.data|no_grad|manual_seed))\b')
+  OR REGEXP_CONTAINS(q.body,         r'\b(torch::|at::)\b')
+  OR REGEXP_CONTAINS(LOWER(a.body),  r'\b(import\s+torch|from\s+torch\s+import|torch\.(nn|cuda|optim|jit|compile|tensor|utils\.data|no_grad|manual_seed)|torch::|at::)\b')
+)
+AND NOT REGEXP_CONTAINS(LOWER(q.body), r'\brequire\s+[\'"]torch[\'"]')
+QUALIFY
+  ROW_NUMBER() OVER (
+    PARTITION BY q.id
+    ORDER BY IF(a.id = q.accepted_answer_id, 1, 0) DESC, a.score DESC, a.creation_date ASC
+  ) = 1;
 ```
 
 * Источник: документация PyTorch (версии 2.x), вкл. subsections (torch, torchvision, torchtext при необходимости)

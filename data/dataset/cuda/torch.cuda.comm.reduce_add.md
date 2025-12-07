@@ -1,0 +1,17 @@
+torch.cuda.comm.reduce_add 
+=========================================================================================
+
+torch.cuda.comm. reduce_add ( *inputs*  , *destination = None* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/nn/parallel/comm.py#L69) 
+:   Sum tensors from multiple GPUs. 
+
+All inputs should have matching shapes, dtype, and layout. The output tensor
+will be of the same shape, dtype, and layout. 
+
+Parameters
+:   * **inputs** ( *Iterable* *[* [*Tensor*](../tensors.html#torch.Tensor "torch.Tensor") *]*  ) – an iterable of tensors to add.
+* **destination** ( [*int*](https://docs.python.org/3/library/functions.html#int "(in Python v3.13)") *,* *optional*  ) – a device on which the output will be
+placed (default: current device).
+
+Returns
+:   A tensor containing an elementwise sum of all inputs, placed on the `destination`  device.
+

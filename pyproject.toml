@@ -7,6 +7,8 @@ dependencies = []
 [tool.uv.workspace]
 members = [
     "torch-parser",
+    "api",
+    "tgbot",
 ]
 
 [tool.uv.sources]

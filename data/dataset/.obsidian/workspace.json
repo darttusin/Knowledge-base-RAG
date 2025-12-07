@@ -1,0 +1,179 @@
+{
+  "main": {
+    "id": "e3422f0de3552f46",
+    "type": "split",
+    "children": [
+      {
+        "id": "f464a779c9161710",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "8256e1a252f97818",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "export/torch.nn.Module.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "torch.nn.Module"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "a63816a7565ef8b9",
+    "type": "split",
+    "children": [
+      {
+        "id": "4d90efbcabc54544",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "9ec053a68bd98bee",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "d0ae665cb2d042e6",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "71c6dd91c86a5e84",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "89be25a35be32f67",
+    "type": "split",
+    "children": [
+      {
+        "id": "4e9e6a54b2b1219e",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "d6ee56c3afdc5452",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "export/torch.nn.Module.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for torch.nn.Module"
+            }
+          },
+          {
+            "id": "931eb8c6eb654eb8",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "export/torch.nn.Module.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from torch.nn.Module"
+            }
+          },
+          {
+            "id": "9b992d8ac18b9224",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "d3f75f0e530901c0",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "export/torch.nn.Module.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of torch.nn.Module"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "8256e1a252f97818",
+  "lastOpenFiles": [
+    "export/library.md",
+    "export/fx.md",
+    "export/draft_export.md",
+    "export/cond.md"
+  ]
+}

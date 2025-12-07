@@ -1,0 +1,661 @@
+torch.Storage 
+==============================================================
+
+In PyTorch, a regular tensor is a multi-dimensional array that is defined by the following components: 
+
+* Storage: The actual data of the tensor, stored as a contiguous, one-dimensional array of bytes.
+* `dtype`  : The data type of the elements in the tensor, such as torch.float32 or torch.int64.
+* `shape`  : A tuple indicating the size of the tensor in each dimension.
+* Stride: The step size needed to move from one element to the next in each dimension.
+* Offset: The starting point in the storage from which the tensor data begins. This will usually be 0 for newly
+created tensors.
+
+These components together define the structure and data of a tensor, with the storage holding the
+actual data and the rest serving as metadata. 
+
+Untyped Storage API 
+--------------------------------------------------------------------------
+
+A [`torch.UntypedStorage`](#torch.UntypedStorage "torch.UntypedStorage")  is a contiguous, one-dimensional array of elements. Its length is equal to the number of
+bytes of the tensor. The storage serves as the underlying data container for tensors.
+In general, a tensor created in PyTorch using regular constructors such as [`zeros()`](generated/torch.zeros.html#torch.zeros "torch.zeros")  , [`zeros_like()`](generated/torch.zeros_like.html#torch.zeros_like "torch.zeros_like")  or [`new_zeros()`](generated/torch.Tensor.new_zeros.html#torch.Tensor.new_zeros "torch.Tensor.new_zeros")  will produce tensors where there is a one-to-one correspondence between the tensor
+storage and the tensor itself. 
+
+However, a storage is allowed to be shared by multiple tensors.
+For instance, any view of a tensor (obtained through [`view()`](generated/torch.Tensor.view.html#torch.Tensor.view "torch.Tensor.view")  or some, but not all, kinds of indexing
+like integers and slices) will point to the same underlying storage as the original tensor.
+When serializing and deserializing tensors that share a common storage, the relationship is preserved, and the tensors
+continue to point to the same storage. Interestingly, deserializing multiple tensors that point to a single storage
+can be faster than deserializing multiple independent tensors. 
+
+A tensor storage can be accessed through the [`untyped_storage()`](generated/torch.Tensor.untyped_storage.html#torch.Tensor.untyped_storage "torch.Tensor.untyped_storage")  method. This will return an object of
+type [`torch.UntypedStorage`](#torch.UntypedStorage "torch.UntypedStorage")  .
+Fortunately, storages have a unique identifier accessed through the [`torch.UntypedStorage.data_ptr()`](#torch.UntypedStorage.data_ptr "torch.UntypedStorage.data_ptr")  method.
+In regular settings, two tensors with the same data storage will have the same storage `data_ptr`  .
+However, tensors themselves can point to two separate storages, one for its data attribute and another for its grad
+attribute. Each will require a `data_ptr()`  of its own. In general, there is no guarantee that a [`torch.Tensor.data_ptr()`](generated/torch.Tensor.data_ptr.html#torch.Tensor.data_ptr "torch.Tensor.data_ptr")  and [`torch.UntypedStorage.data_ptr()`](#torch.UntypedStorage.data_ptr "torch.UntypedStorage.data_ptr")  match and this should not be assumed to be true. 
+
+Untyped storages are somewhat independent of the tensors that are built on them. Practically, this means that tensors
+with different dtypes or shape can point to the same storage.
+It also implies that a tensor storage can be changed, as the following example shows: 
+
+```
+>>> t = torch.ones(3)
+>>> s0 = t.untyped_storage()
+>>> s0
+ 0
+ 0
+ 128
+ 63
+ 0
+ 0
+ 128
+ 63
+ 0
+ 0
+ 128
+ 63
+[torch.storage.UntypedStorage(device=cpu) of size 12]
+>>> s1 = s0.clone()
+>>> s1.fill_(0)
+ 0
+ 0
+ 0
+ 0
+ 0
+ 0
+ 0
+ 0
+ 0
+ 0
+ 0
+ 0
+[torch.storage.UntypedStorage(device=cpu) of size 12]
+>>> # Fill the tensor with a zeroed storage
+>>> t.set_(s1, storage_offset=t.storage_offset(), stride=t.stride(), size=t.size())
+tensor([0., 0., 0.])
+
+```
+
+Warning 
+
+Please note that directly modifying a tensor’s storage as shown in this example is not a recommended practice.
+This low-level manipulation is illustrated solely for educational purposes, to demonstrate the relationship between
+tensors and their underlying storages. In general, it’s more efficient and safer to use standard `torch.Tensor`  methods, such as [`clone()`](generated/torch.Tensor.clone.html#torch.Tensor.clone "torch.Tensor.clone")  and [`fill_()`](generated/torch.Tensor.fill_.html#torch.Tensor.fill_ "torch.Tensor.fill_")  , to achieve the same results.
+
+Other than `data_ptr`  , untyped storage also have other attributes such as [`filename`](#torch.UntypedStorage.filename "torch.UntypedStorage.filename")  (in case the storage points to a file on disk), [`device`](#torch.UntypedStorage.device "torch.UntypedStorage.device")  or [`is_cuda`](#torch.UntypedStorage.is_cuda "torch.UntypedStorage.is_cuda")  for device checks. A storage can also be manipulated in-place or
+out-of-place with methods like [`copy_`](#torch.UntypedStorage.copy_ "torch.UntypedStorage.copy_")  , [`fill_`](#torch.UntypedStorage.fill_ "torch.UntypedStorage.fill_")  or [`pin_memory`](#torch.UntypedStorage.pin_memory "torch.UntypedStorage.pin_memory")  . FOr more information, check the API
+reference below. Keep in mind that modifying storages is a low-level API and comes with risks!
+Most of these APIs also exist on the tensor level: if present, they should be prioritized over their storage
+counterparts.
+
+Special cases 
+--------------------------------------------------------------
+
+We mentioned that a tensor that has a non-None `grad`  attribute has actually two pieces of data within it.
+In this case, [`untyped_storage()`](generated/torch.Tensor.untyped_storage.html#torch.Tensor.untyped_storage "torch.Tensor.untyped_storage")  will return the storage of the `data`  attribute,
+whereas the storage of the gradient can be obtained through `tensor.grad.untyped_storage()`  . 
+
+```
+>>> t = torch.zeros(3, requires_grad=True)
+>>> t.sum().backward()
+>>> assert list(t.untyped_storage()) == [0] * 12  # the storage of the tensor is just 0s
+>>> assert list(t.grad.untyped_storage()) != [0] * 12  # the storage of the gradient isn't
+
+```
+
+There are also special cases where tensors do not have a typical storage, or no storage at all:
+:   * Tensors on `"meta"`  device: Tensors on the `"meta"`  device are used for shape inference
+and do not hold actual data.
+* Fake Tensors: Another internal tool used by PyTorch’s compiler is [FakeTensor](https://localhost:8000/docs/stable/torch.compiler_fake_tensor.html)  which is based on a similar idea.
+
+Tensor subclasses or tensor-like objects can also display unusual behaviours. In general, we do not
+expect many use cases to require operating at the Storage level! 
+
+*class* torch. UntypedStorage ( ** args*  , *** kwargs* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L466) 
+:   bfloat16 ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L329) 
+:   Casts this storage to bfloat16 type.
+
+bool ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L325) 
+:   Casts this storage to bool type.
+
+byte ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L321) 
+:   Casts this storage to byte type.
+
+byteswap ( *dtype* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L421) 
+:   Swap bytes in underlying data.
+
+char ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L317) 
+:   Casts this storage to char type.
+
+clone ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L255) 
+:   Return a copy of this storage.
+
+complex_double ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L333) 
+:   Casts this storage to complex double type.
+
+complex_float ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L337) 
+:   Casts this storage to complex float type.
+
+copy_ ( ) 
+:
+
+cpu ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L263) 
+:   Return a CPU copy of this storage if it’s not already on the CPU.
+
+cuda ( *device = None*  , *non_blocking = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L82) 
+:   Returns a copy of this object in CUDA memory. 
+
+If this object is already in CUDA memory and on the correct device, then
+no copy is performed and the original object is returned. 
+
+Parameters
+:   * **device** ( [*int*](https://docs.python.org/3/library/functions.html#int "(in Python v3.13)")  ) – The destination GPU id. Defaults to the current device.
+* **non_blocking** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")  ) – If `True`  and the source is in pinned memory,
+the copy will be asynchronous with respect to the host. Otherwise,
+the argument has no effect.
+
+Return type
+:   [*Union*](https://docs.python.org/3/library/typing.html#typing.Union "(in Python v3.13)")  [ *_StorageBase*  , [*TypedStorage*](#torch.TypedStorage "torch.storage.TypedStorage")  ]
+
+data_ptr ( ) 
+:
+
+device *: [device](tensor_attributes.html#torch.device "torch.device")* 
+:
+
+double ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L293) 
+:   Casts this storage to double type.
+
+element_size ( ) 
+:
+
+*property* filename *: [Optional](https://docs.python.org/3/library/typing.html#typing.Optional "(in Python v3.13)") [ [str](https://docs.python.org/3/library/stdtypes.html#str "(in Python v3.13)") ]* 
+:   Returns the file name associated with this storage. 
+
+The file name will be a string if the storage is on CPU and was created via [`from_file()`](generated/torch.from_file.html#torch.from_file "torch.from_file")  with `shared`  as `True`  . This attribute is `None`  otherwise.
+
+fill_ ( ) 
+:
+
+float ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L297) 
+:   Casts this storage to float type.
+
+float8_e4m3fn ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L345) 
+:   Casts this storage to float8_e4m3fn type
+
+float8_e4m3fnuz ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L353) 
+:   Casts this storage to float8_e4m3fnuz type
+
+float8_e5m2 ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L341) 
+:   Casts this storage to float8_e5m2 type
+
+float8_e5m2fnuz ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L349) 
+:   Casts this storage to float8_e5m2fnuz type
+
+*static* from_buffer ( ) 
+:
+
+*static* from_file ( *filename*  , *shared = False*  , *nbytes = 0* ) → Storage 
+:   Creates a CPU storage backed by a memory-mapped file. 
+
+If `shared`  is `True`  , then memory is shared between all processes.
+All changes are written to the file. If `shared`  is `False`  , then the changes on
+the storage do not affect the file. 
+
+`nbytes`  is the number of bytes of storage. If `shared`  is `False`  ,
+then the file must contain at least `nbytes`  bytes. If `shared`  is `True`  the file will be created if needed. (Note that for `UntypedStorage`  this argument differs from that of `TypedStorage.from_file`  ) 
+
+Parameters
+:   * **filename** ( [*str*](https://docs.python.org/3/library/stdtypes.html#str "(in Python v3.13)")  ) – file name to map
+* **shared** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")  ) – whether to share memory (whether `MAP_SHARED`  or `MAP_PRIVATE`  is passed to the
+underlying [mmap(2) call](https://man7.org/linux/man-pages/man2/mmap.2.html)  )
+* **nbytes** ( [*int*](https://docs.python.org/3/library/functions.html#int "(in Python v3.13)")  ) – number of bytes of storage
+
+get_device ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L117) 
+:   Return type
+:   [int](https://docs.python.org/3/library/functions.html#int "(in Python v3.13)")
+
+half ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L301) 
+:   Casts this storage to half type.
+
+hpu ( *device = None*  , *non_blocking = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L99) 
+:   Returns a copy of this object in HPU memory. 
+
+If this object is already in HPU memory and on the correct device, then
+no copy is performed and the original object is returned. 
+
+Parameters
+:   * **device** ( [*int*](https://docs.python.org/3/library/functions.html#int "(in Python v3.13)")  ) – The destination HPU id. Defaults to the current device.
+* **non_blocking** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")  ) – If `True`  and the source is in pinned memory,
+the copy will be asynchronous with respect to the host. Otherwise,
+the argument has no effect.
+
+Return type
+:   [*Union*](https://docs.python.org/3/library/typing.html#typing.Union "(in Python v3.13)")  [ *_StorageBase*  , [*TypedStorage*](#torch.TypedStorage "torch.storage.TypedStorage")  ]
+
+int ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L309) 
+:   Casts this storage to int type.
+
+*property* is_cuda 
+:
+
+*property* is_hpu 
+:
+
+is_pinned ( *device = 'cuda'* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L357) 
+:   Determine whether the CPU storage is already pinned on device. 
+
+Parameters
+: **device** ( [*str*](https://docs.python.org/3/library/stdtypes.html#str "(in Python v3.13)") *or* [*torch.device*](tensor_attributes.html#torch.device "torch.device")  ) – The device to pin memory on (default: `'cuda'`  ).
+This argument is discouraged and subject to deprecated.
+
+Returns
+:   A boolean variable.
+
+is_shared ( ) 
+:
+
+is_sparse *: [bool](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")* *= False* 
+:
+
+is_sparse_csr *: [bool](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")* *= False* 
+:
+
+long ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L305) 
+:   Casts this storage to long type.
+
+mps ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L269) 
+:   Return a MPS copy of this storage if it’s not already on the MPS.
+
+nbytes ( ) 
+:
+
+new ( ) 
+:
+
+pin_memory ( *device = 'cuda'* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L373) 
+:   Copy the CPU storage to pinned memory, if it’s not already pinned. 
+
+Parameters
+: **device** ( [*str*](https://docs.python.org/3/library/stdtypes.html#str "(in Python v3.13)") *or* [*torch.device*](tensor_attributes.html#torch.device "torch.device")  ) – The device to pin memory on (default: `'cuda'`  ).
+This argument is discouraged and subject to deprecated.
+
+Returns
+:   A pinned CPU storage.
+
+resizable ( ) 
+:
+
+resize_ ( ) 
+:
+
+share_memory_ ( ** args*  , *** kwargs* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L489) 
+:   Moves the storage to shared memory. 
+
+This is a no-op for storages already in shared memory and for CUDA
+storages, which do not need to be moved for sharing across processes.
+Storages in shared memory cannot be resized. 
+
+Note that to mitigate issues like [this](https://github.com/pytorch/pytorch/issues/95606)  it is thread safe to call this function from multiple threads on the same object.
+It is NOT thread safe though to call any other function on self without proper
+synchronization. Please see [Multiprocessing best practices](notes/multiprocessing.html)  for more details. 
+
+Note 
+
+When all references to a storage in shared memory are deleted, the associated shared memory
+object will also be deleted. PyTorch has a special cleanup process to ensure that this happens
+even if the current process exits unexpectedly. 
+
+It is worth noting the difference between [`share_memory_()`](#torch.UntypedStorage.share_memory_ "torch.UntypedStorage.share_memory_")  and [`from_file()`](generated/torch.from_file.html#torch.from_file "torch.from_file")  with `shared = True` 
+
+1. `share_memory_`  uses [shm_open(3)](https://man7.org/linux/man-pages/man3/shm_open.3.html)  to create a
+POSIX shared memory object while [`from_file()`](generated/torch.from_file.html#torch.from_file "torch.from_file")  uses [open(2)](https://man7.org/linux/man-pages/man2/open.2.html)  to open the filename passed by the user.
+2. Both use an [mmap(2) call](https://man7.org/linux/man-pages/man2/mmap.2.html)  with `MAP_SHARED`  to map the file/object into the current virtual address space
+3. `share_memory_`  will call `shm_unlink(3)`  on the object after mapping it to make sure the shared memory
+object is freed when no process has the object open. `torch.from_file(shared=True)`  does not unlink the
+file. This file is persistent and will remain until it is deleted by the user.
+
+Returns
+:   `self`
+
+short ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L313) 
+:   Casts this storage to short type.
+
+size ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L74) 
+:   Return type
+:   [int](https://docs.python.org/3/library/functions.html#int "(in Python v3.13)")
+
+to ( *** , *device*  , *non_blocking = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L288) 
+:
+
+tolist ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L259) 
+:   Return a list containing the elements of this storage.
+
+type ( *dtype = None*  , *non_blocking = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L77) 
+:   Return type
+:   [*Union*](https://docs.python.org/3/library/typing.html#typing.Union "(in Python v3.13)")  [ *_StorageBase*  , [*TypedStorage*](#torch.TypedStorage "torch.storage.TypedStorage")  ]
+
+untyped ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L418) 
+:
+
+Legacy Typed Storage 
+----------------------------------------------------------------------------
+
+Warning 
+
+For historical context, PyTorch previously used typed storage classes, which are
+now deprecated and should be avoided. The following details this API in case you
+should encounter it, although its usage is highly discouraged.
+All storage classes except for [`torch.UntypedStorage`](#torch.UntypedStorage "torch.UntypedStorage")  will be removed
+in the future, and [`torch.UntypedStorage`](#torch.UntypedStorage "torch.UntypedStorage")  will be used in all cases.
+
+`torch.Storage`  is an alias for the storage class that corresponds with
+the default data type ( [`torch.get_default_dtype()`](generated/torch.get_default_dtype.html#torch.get_default_dtype "torch.get_default_dtype")  ). For example, if the
+default data type is `torch.float`  , `torch.Storage`  resolves to [`torch.FloatStorage`](#torch.FloatStorage "torch.FloatStorage")  . 
+
+The `torch.<type>Storage`  and `torch.cuda.<type>Storage`  classes,
+like [`torch.FloatStorage`](#torch.FloatStorage "torch.FloatStorage")  , [`torch.IntStorage`](#torch.IntStorage "torch.IntStorage")  , etc., are not
+actually ever instantiated. Calling their constructors creates
+a [`torch.TypedStorage`](#torch.TypedStorage "torch.TypedStorage")  with the appropriate [`torch.dtype`](tensor_attributes.html#torch.dtype "torch.dtype")  and [`torch.device`](tensor_attributes.html#torch.device "torch.device")  . `torch.<type>Storage`  classes have all of the
+same class methods that [`torch.TypedStorage`](#torch.TypedStorage "torch.TypedStorage")  has. 
+
+A [`torch.TypedStorage`](#torch.TypedStorage "torch.TypedStorage")  is a contiguous, one-dimensional array of
+elements of a particular [`torch.dtype`](tensor_attributes.html#torch.dtype "torch.dtype")  . It can be given any [`torch.dtype`](tensor_attributes.html#torch.dtype "torch.dtype")  , and the internal data will be interpreted appropriately. [`torch.TypedStorage`](#torch.TypedStorage "torch.TypedStorage")  contains a [`torch.UntypedStorage`](#torch.UntypedStorage "torch.UntypedStorage")  which
+holds the data as an untyped array of bytes. 
+
+Every strided [`torch.Tensor`](tensors.html#torch.Tensor "torch.Tensor")  contains a [`torch.TypedStorage`](#torch.TypedStorage "torch.TypedStorage")  ,
+which stores all of the data that the [`torch.Tensor`](tensors.html#torch.Tensor "torch.Tensor")  views. 
+
+*class* torch. TypedStorage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L671) 
+:   bfloat16 ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1367) 
+:   Casts this storage to bfloat16 type.
+
+bool ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1362) 
+:   Casts this storage to bool type.
+
+byte ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1357) 
+:   Casts this storage to byte type.
+
+char ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1352) 
+:   Casts this storage to char type.
+
+clone ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1145) 
+:   Return a copy of this storage.
+
+complex_double ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1372) 
+:   Casts this storage to complex double type.
+
+complex_float ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1377) 
+:   Casts this storage to complex float type.
+
+copy_ ( *source*  , *non_blocking = None* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1021) 
+:
+
+cpu ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1155) 
+:   Return a CPU copy of this storage if it’s not already on the CPU.
+
+cuda ( *device = None*  , *non_blocking = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1054) 
+:   Returns a copy of this object in CUDA memory. 
+
+If this object is already in CUDA memory and on the correct device, then
+no copy is performed and the original object is returned. 
+
+Parameters
+:   * **device** ( [*int*](https://docs.python.org/3/library/functions.html#int "(in Python v3.13)")  ) – The destination GPU id. Defaults to the current device.
+* **non_blocking** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")  ) – If `True`  and the source is in pinned memory,
+the copy will be asynchronous with respect to the host. Otherwise,
+the argument has no effect.
+
+Return type
+:   [*Self*](https://docs.python.org/3/library/typing.html#typing.Self "(in Python v3.13)")
+
+data_ptr ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1245) 
+:
+
+*property* device 
+:
+
+double ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1322) 
+:   Casts this storage to double type.
+
+dtype *: [dtype](tensor_attributes.html#torch.dtype "torch.dtype")* 
+:
+
+element_size ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1097) 
+:
+
+*property* filename *: [Optional](https://docs.python.org/3/library/typing.html#typing.Optional "(in Python v3.13)") [ [str](https://docs.python.org/3/library/stdtypes.html#str "(in Python v3.13)") ]* 
+:   Returns the file name associated with this storage if the storage was memory mapped from a file.
+or `None`  if the storage was not created by memory mapping a file.
+
+fill_ ( *value* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L688) 
+:
+
+float ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1327) 
+:   Casts this storage to float type.
+
+float8_e4m3fn ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1387) 
+:   Casts this storage to float8_e4m3fn type
+
+float8_e4m3fnuz ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1397) 
+:   Casts this storage to float8_e4m3fnuz type
+
+float8_e5m2 ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1382) 
+:   Casts this storage to float8_e5m2 type
+
+float8_e5m2fnuz ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1392) 
+:   Casts this storage to float8_e5m2fnuz type
+
+*classmethod* from_buffer ( ** args*  , *** kwargs* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1272) 
+:
+
+*classmethod* from_file ( *filename*  , *shared = False*  , *size = 0* ) → Storage [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1402) 
+:   Creates a CPU storage backed by a memory-mapped file. 
+
+If `shared`  is `True`  , then memory is shared between all processes.
+All changes are written to the file. If `shared`  is `False`  , then the changes on
+the storage do not affect the file. 
+
+`size`  is the number of elements in the storage. If `shared`  is `False`  ,
+then the file must contain at least `size * sizeof(Type)`  bytes
+( `Type`  is the type of storage). If `shared`  is `True`  the file will be created if needed. 
+
+Parameters
+:   * **filename** ( [*str*](https://docs.python.org/3/library/stdtypes.html#str "(in Python v3.13)")  ) – file name to map
+* **shared** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")  ) –
+
+    whether to share memory (whether `MAP_SHARED`  or `MAP_PRIVATE`  is passed to the
+        underlying [mmap(2) call](https://man7.org/linux/man-pages/man2/mmap.2.html)  )
+
+* **size** ( [*int*](https://docs.python.org/3/library/functions.html#int "(in Python v3.13)")  ) – number of elements in the storage
+
+get_device ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1105) 
+:   Return type
+:   [int](https://docs.python.org/3/library/functions.html#int "(in Python v3.13)")
+
+half ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1332) 
+:   Casts this storage to half type.
+
+hpu ( *device = None*  , *non_blocking = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1067) 
+:   Returns a copy of this object in HPU memory. 
+
+If this object is already in HPU memory and on the correct device, then
+no copy is performed and the original object is returned. 
+
+Parameters
+:   * **device** ( [*int*](https://docs.python.org/3/library/functions.html#int "(in Python v3.13)")  ) – The destination HPU id. Defaults to the current device.
+* **non_blocking** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")  ) – If `True`  and the source is in pinned memory,
+the copy will be asynchronous with respect to the host. Otherwise,
+the argument has no effect.
+
+Return type
+:   [*Self*](https://docs.python.org/3/library/typing.html#typing.Self "(in Python v3.13)")
+
+int ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1342) 
+:   Casts this storage to int type.
+
+*property* is_cuda 
+:
+
+*property* is_hpu 
+:
+
+is_pinned ( *device = 'cuda'* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1160) 
+:   Determine whether the CPU TypedStorage is already pinned on device. 
+
+Parameters
+: **device** ( [*str*](https://docs.python.org/3/library/stdtypes.html#str "(in Python v3.13)") *or* [*torch.device*](tensor_attributes.html#torch.device "torch.device")  ) – The device to pin memory on (default: `'cuda'`  ).
+This argument is discouraged and subject to deprecated.
+
+Returns
+:   A boolean variable.
+
+is_shared ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1447) 
+:
+
+is_sparse *: [bool](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")* *= False* 
+:
+
+long ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1337) 
+:   Casts this storage to long type.
+
+nbytes ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1029) 
+:
+
+pickle_storage_type ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1229) 
+:
+
+pin_memory ( *device = 'cuda'* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1173) 
+:   Copy the CPU TypedStorage to pinned memory, if it’s not already pinned. 
+
+Parameters
+: **device** ( [*str*](https://docs.python.org/3/library/stdtypes.html#str "(in Python v3.13)") *or* [*torch.device*](tensor_attributes.html#torch.device "torch.device")  ) – The device to pin memory on (default: `'cuda'`  ).
+This argument is discouraged and subject to deprecated.
+
+Returns
+:   A pinned CPU storage.
+
+resizable ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1253) 
+:
+
+resize_ ( *size* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1257) 
+:
+
+share_memory_ ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1188) 
+:   See [`torch.UntypedStorage.share_memory_()`](#torch.UntypedStorage.share_memory_ "torch.UntypedStorage.share_memory_")
+
+short ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1347) 
+:   Casts this storage to short type.
+
+size ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1219) 
+:
+
+to ( *** , *device*  , *non_blocking = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1080) 
+:   Returns a copy of this object in device memory. 
+
+If this object is already on the correct device, then no copy is performed
+and the original object is returned. 
+
+Parameters
+:   * **device** ( [*int*](https://docs.python.org/3/library/functions.html#int "(in Python v3.13)")  ) – The destination device.
+* **non_blocking** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")  ) – If `True`  and the source is in pinned memory,
+the copy will be asynchronous with respect to the host. Otherwise,
+the argument has no effect.
+
+Return type
+:   Self
+
+tolist ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1150) 
+:   Return a list containing the elements of this storage.
+
+type ( *dtype = None*  , *non_blocking = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L1037) 
+:   Returns the type if *dtype* is not provided, else casts this object to
+the specified type. 
+
+If this is already of the correct type, no copy is performed and the
+original object is returned. 
+
+Parameters
+:   * **dtype** ( [*type*](https://docs.python.org/3/library/functions.html#type "(in Python v3.13)") *or* *string*  ) – The desired type
+* **non_blocking** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")  ) – If `True`  , and the source is in pinned memory
+and destination is on the GPU or vice versa, the copy is performed
+asynchronously with respect to the host. Otherwise, the argument
+has no effect.
+* ****kwargs** – For compatibility, may contain the key `async`  in place of
+the `non_blocking`  argument. The `async`  arg is deprecated.
+
+Return type
+:   [*Union*](https://docs.python.org/3/library/typing.html#typing.Union "(in Python v3.13)")  [ *_StorageBase*  , [*TypedStorage*](#torch.TypedStorage "torch.storage.TypedStorage")  , [str](https://docs.python.org/3/library/stdtypes.html#str "(in Python v3.13)")  ]
+
+untyped ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/storage.py#L886) 
+:   Return the internal [`torch.UntypedStorage`](#torch.UntypedStorage "torch.UntypedStorage")  .
+
+*class* torch. DoubleStorage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L1863) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.float64* 
+:
+
+*class* torch. FloatStorage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L1874) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.float32* 
+:
+
+*class* torch. HalfStorage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L1885) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.float16* 
+:
+
+*class* torch. LongStorage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L1896) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.int64* 
+:
+
+*class* torch. IntStorage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L1907) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.int32* 
+:
+
+*class* torch. ShortStorage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L1918) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.int16* 
+:
+
+*class* torch. CharStorage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L1929) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.int8* 
+:
+
+*class* torch. ByteStorage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L1852) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.uint8* 
+:
+
+*class* torch. BoolStorage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L1940) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.bool* 
+:
+
+*class* torch. BFloat16Storage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L1951) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.bfloat16* 
+:
+
+*class* torch. ComplexDoubleStorage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L1962) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.complex128* 
+:
+
+*class* torch. ComplexFloatStorage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L1973) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.complex64* 
+:
+
+*class* torch. QUInt8Storage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L1984) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.quint8* 
+:
+
+*class* torch. QInt8Storage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L1995) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.qint8* 
+:
+
+*class* torch. QInt32Storage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L2006) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.qint32* 
+:
+
+*class* torch. QUInt4x2Storage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L2017) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.quint4x2* 
+:
+
+*class* torch. QUInt2x4Storage ( ** args*  , *wrap_storage = None*  , *dtype = None*  , *device = None*  , *_internal = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/__init__.py#L2028) 
+:   dtype *: [torch.dtype](tensor_attributes.html#torch.dtype "torch.dtype")* *= torch.quint2x4* 
+:
+

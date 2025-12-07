@@ -1,0 +1,1721 @@
+AdamW 
+==============================================
+
+*class* torch.optim. AdamW ( *params*  , *lr = 0.001*  , *betas = (0.9, 0.999)*  , *eps = 1e-08*  , *weight_decay = 0.01*  , *amsgrad = False*  , *** , *maximize = False*  , *foreach = None*  , *capturable = False*  , *differentiable = False*  , *fused = None* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/optim/adamw.py#L21) 
+:   Implements AdamW algorithm, where weight decay does not accumulate in the momentum nor variance. 
+
+<!-- MathML: <math display="block" xmlns="http://www.w3.org/1998/Math/MathML">
+<semantics>
+<mtable columnalign="right left" columnspacing="0em" rowspacing="0.25em">
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mpadded height="0em" voffset="0em">
+<mspace height="0.04em" mathbackground="black" width="31.298em">
+</mspace>
+</mpadded>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mtext mathvariant="bold">
+                input
+               </mtext>
+<mo>
+                :
+               </mo>
+<mi>
+                γ
+               </mi>
+<mtext>
+                (lr)
+               </mtext>
+<mo separator="true">
+                ,
+               </mo>
+<mtext>
+</mtext>
+<msub>
+<mi>
+                 β
+                </mi>
+<mn>
+                 1
+                </mn>
+</msub>
+<mo separator="true">
+                ,
+               </mo>
+<msub>
+<mi>
+                 β
+                </mi>
+<mn>
+                 2
+                </mn>
+</msub>
+<mtext>
+                (betas)
+               </mtext>
+<mo separator="true">
+                ,
+               </mo>
+<mtext>
+</mtext>
+<msub>
+<mi>
+                 θ
+                </mi>
+<mn>
+                 0
+                </mn>
+</msub>
+<mtext>
+                (params)
+               </mtext>
+<mo separator="true">
+                ,
+               </mo>
+<mtext>
+</mtext>
+<mi>
+                f
+               </mi>
+<mo stretchy="false">
+                (
+               </mo>
+<mi>
+                θ
+               </mi>
+<mo stretchy="false">
+                )
+               </mo>
+<mtext>
+                (objective)
+               </mtext>
+<mo separator="true">
+                ,
+               </mo>
+<mtext>
+</mtext>
+<mi>
+                ϵ
+               </mi>
+<mtext>
+                (epsilon)
+               </mtext>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="3.6989em">
+</mspace>
+<mi>
+                λ
+               </mi>
+<mtext>
+                (weight decay)
+               </mtext>
+<mo separator="true">
+                ,
+               </mo>
+<mtext>
+</mtext>
+<mtext mathvariant="italic">
+                amsgrad
+               </mtext>
+<mo separator="true">
+                ,
+               </mo>
+<mtext>
+</mtext>
+<mtext mathvariant="italic">
+                maximize
+               </mtext>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mtext mathvariant="bold">
+                initialize
+               </mtext>
+<mo>
+                :
+               </mo>
+<msub>
+<mi>
+                 m
+                </mi>
+<mn>
+                 0
+                </mn>
+</msub>
+<mo>
+                ←
+               </mo>
+<mn>
+                0
+               </mn>
+<mtext>
+                (first moment)
+               </mtext>
+<mo separator="true">
+                ,
+               </mo>
+<msub>
+<mi>
+                 v
+                </mi>
+<mn>
+                 0
+                </mn>
+</msub>
+<mo>
+                ←
+               </mo>
+<mn>
+                0
+               </mn>
+<mtext>
+                ( second moment)
+               </mtext>
+<mo separator="true">
+                ,
+               </mo>
+<mtext>
+</mtext>
+<msubsup>
+<mi>
+                 v
+                </mi>
+<mn>
+                 0
+                </mn>
+<mrow>
+<mi>
+                  m
+                 </mi>
+<mi>
+                  a
+                 </mi>
+<mi>
+                  x
+                 </mi>
+</mrow>
+</msubsup>
+<mo>
+                ←
+               </mo>
+<mn>
+                0
+               </mn>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mpadded height="0em" voffset="0em">
+<mspace height="0.04em" mathbackground="black" width="31.298em">
+</mspace>
+</mpadded>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mtext mathvariant="bold">
+                for
+               </mtext>
+<mtext>
+</mtext>
+<mi>
+                t
+               </mi>
+<mo>
+                =
+               </mo>
+<mn>
+                1
+               </mn>
+<mtext>
+</mtext>
+<mtext mathvariant="bold">
+                to
+               </mtext>
+<mtext>
+</mtext>
+<mo>
+                …
+               </mo>
+<mtext>
+</mtext>
+<mtext mathvariant="bold">
+                do
+               </mtext>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="1.4226em">
+</mspace>
+<mtext mathvariant="bold">
+                if
+               </mtext>
+<mtext>
+</mtext>
+<mtext mathvariant="italic">
+                maximize
+               </mtext>
+<mo>
+                :
+               </mo>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="2.8453em">
+</mspace>
+<msub>
+<mi>
+                 g
+                </mi>
+<mi>
+                 t
+                </mi>
+</msub>
+<mo>
+                ←
+               </mo>
+<mo>
+                −
+               </mo>
+<msub>
+<mi mathvariant="normal">
+                 ∇
+                </mi>
+<mi>
+                 θ
+                </mi>
+</msub>
+<msub>
+<mi>
+                 f
+                </mi>
+<mi>
+                 t
+                </mi>
+</msub>
+<mo stretchy="false">
+                (
+               </mo>
+<msub>
+<mi>
+                 θ
+                </mi>
+<mrow>
+<mi>
+                  t
+                 </mi>
+<mo>
+                  −
+                 </mo>
+<mn>
+                  1
+                 </mn>
+</mrow>
+</msub>
+<mo stretchy="false">
+                )
+               </mo>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="1.4226em">
+</mspace>
+<mtext mathvariant="bold">
+                else
+               </mtext>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="2.8453em">
+</mspace>
+<msub>
+<mi>
+                 g
+                </mi>
+<mi>
+                 t
+                </mi>
+</msub>
+<mo>
+                ←
+               </mo>
+<msub>
+<mi mathvariant="normal">
+                 ∇
+                </mi>
+<mi>
+                 θ
+                </mi>
+</msub>
+<msub>
+<mi>
+                 f
+                </mi>
+<mi>
+                 t
+                </mi>
+</msub>
+<mo stretchy="false">
+                (
+               </mo>
+<msub>
+<mi>
+                 θ
+                </mi>
+<mrow>
+<mi>
+                  t
+                 </mi>
+<mo>
+                  −
+                 </mo>
+<mn>
+                  1
+                 </mn>
+</mrow>
+</msub>
+<mo stretchy="false">
+                )
+               </mo>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="1.4226em">
+</mspace>
+<msub>
+<mi>
+                 θ
+                </mi>
+<mi>
+                 t
+                </mi>
+</msub>
+<mo>
+                ←
+               </mo>
+<msub>
+<mi>
+                 θ
+                </mi>
+<mrow>
+<mi>
+                  t
+                 </mi>
+<mo>
+                  −
+                 </mo>
+<mn>
+                  1
+                 </mn>
+</mrow>
+</msub>
+<mo>
+                −
+               </mo>
+<mi>
+                γ
+               </mi>
+<mi>
+                λ
+               </mi>
+<msub>
+<mi>
+                 θ
+                </mi>
+<mrow>
+<mi>
+                  t
+                 </mi>
+<mo>
+                  −
+                 </mo>
+<mn>
+                  1
+                 </mn>
+</mrow>
+</msub>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="1.4226em">
+</mspace>
+<msub>
+<mi>
+                 m
+                </mi>
+<mi>
+                 t
+                </mi>
+</msub>
+<mo>
+                ←
+               </mo>
+<msub>
+<mi>
+                 β
+                </mi>
+<mn>
+                 1
+                </mn>
+</msub>
+<msub>
+<mi>
+                 m
+                </mi>
+<mrow>
+<mi>
+                  t
+                 </mi>
+<mo>
+                  −
+                 </mo>
+<mn>
+                  1
+                 </mn>
+</mrow>
+</msub>
+<mo>
+                +
+               </mo>
+<mo stretchy="false">
+                (
+               </mo>
+<mn>
+                1
+               </mn>
+<mo>
+                −
+               </mo>
+<msub>
+<mi>
+                 β
+                </mi>
+<mn>
+                 1
+                </mn>
+</msub>
+<mo stretchy="false">
+                )
+               </mo>
+<msub>
+<mi>
+                 g
+                </mi>
+<mi>
+                 t
+                </mi>
+</msub>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="1.4226em">
+</mspace>
+<msub>
+<mi>
+                 v
+                </mi>
+<mi>
+                 t
+                </mi>
+</msub>
+<mo>
+                ←
+               </mo>
+<msub>
+<mi>
+                 β
+                </mi>
+<mn>
+                 2
+                </mn>
+</msub>
+<msub>
+<mi>
+                 v
+                </mi>
+<mrow>
+<mi>
+                  t
+                 </mi>
+<mo>
+                  −
+                 </mo>
+<mn>
+                  1
+                 </mn>
+</mrow>
+</msub>
+<mo>
+                +
+               </mo>
+<mo stretchy="false">
+                (
+               </mo>
+<mn>
+                1
+               </mn>
+<mo>
+                −
+               </mo>
+<msub>
+<mi>
+                 β
+                </mi>
+<mn>
+                 2
+                </mn>
+</msub>
+<mo stretchy="false">
+                )
+               </mo>
+<msubsup>
+<mi>
+                 g
+                </mi>
+<mi>
+                 t
+                </mi>
+<mn>
+                 2
+                </mn>
+</msubsup>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="1.4226em">
+</mspace>
+<mover accent="true">
+<msub>
+<mi>
+                  m
+                 </mi>
+<mi>
+                  t
+                 </mi>
+</msub>
+<mo stretchy="true">
+                 ^
+                </mo>
+</mover>
+<mo>
+                ←
+               </mo>
+<msub>
+<mi>
+                 m
+                </mi>
+<mi>
+                 t
+                </mi>
+</msub>
+<mi mathvariant="normal">
+                /
+               </mi>
+<mo fence="false" maxsize="1.2em" minsize="1.2em" stretchy="true">
+                (
+               </mo>
+<mn>
+                1
+               </mn>
+<mo>
+                −
+               </mo>
+<msubsup>
+<mi>
+                 β
+                </mi>
+<mn>
+                 1
+                </mn>
+<mi>
+                 t
+                </mi>
+</msubsup>
+<mo fence="false" maxsize="1.2em" minsize="1.2em" stretchy="true">
+                )
+               </mo>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="1.4226em">
+</mspace>
+<mtext mathvariant="bold">
+                if
+               </mtext>
+<mtext>
+</mtext>
+<mi>
+                a
+               </mi>
+<mi>
+                m
+               </mi>
+<mi>
+                s
+               </mi>
+<mi>
+                g
+               </mi>
+<mi>
+                r
+               </mi>
+<mi>
+                a
+               </mi>
+<mi>
+                d
+               </mi>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="2.8453em">
+</mspace>
+<msubsup>
+<mi>
+                 v
+                </mi>
+<mi>
+                 t
+                </mi>
+<mrow>
+<mi>
+                  m
+                 </mi>
+<mi>
+                  a
+                 </mi>
+<mi>
+                  x
+                 </mi>
+</mrow>
+</msubsup>
+<mo>
+                ←
+               </mo>
+<mrow>
+<mi mathvariant="normal">
+                 m
+                </mi>
+<mi mathvariant="normal">
+                 a
+                </mi>
+<mi mathvariant="normal">
+                 x
+                </mi>
+</mrow>
+<mo stretchy="false">
+                (
+               </mo>
+<msubsup>
+<mi>
+                 v
+                </mi>
+<mrow>
+<mi>
+                  t
+                 </mi>
+<mo>
+                  −
+                 </mo>
+<mn>
+                  1
+                 </mn>
+</mrow>
+<mrow>
+<mi>
+                  m
+                 </mi>
+<mi>
+                  a
+                 </mi>
+<mi>
+                  x
+                 </mi>
+</mrow>
+</msubsup>
+<mo separator="true">
+                ,
+               </mo>
+<msub>
+<mi>
+                 v
+                </mi>
+<mi>
+                 t
+                </mi>
+</msub>
+<mo stretchy="false">
+                )
+               </mo>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="2.8453em">
+</mspace>
+<mover accent="true">
+<msub>
+<mi>
+                  v
+                 </mi>
+<mi>
+                  t
+                 </mi>
+</msub>
+<mo stretchy="true">
+                 ^
+                </mo>
+</mover>
+<mo>
+                ←
+               </mo>
+<msubsup>
+<mi>
+                 v
+                </mi>
+<mi>
+                 t
+                </mi>
+<mrow>
+<mi>
+                  m
+                 </mi>
+<mi>
+                  a
+                 </mi>
+<mi>
+                  x
+                 </mi>
+</mrow>
+</msubsup>
+<mi mathvariant="normal">
+                /
+               </mi>
+<mo fence="false" maxsize="1.2em" minsize="1.2em" stretchy="true">
+                (
+               </mo>
+<mn>
+                1
+               </mn>
+<mo>
+                −
+               </mo>
+<msubsup>
+<mi>
+                 β
+                </mi>
+<mn>
+                 2
+                </mn>
+<mi>
+                 t
+                </mi>
+</msubsup>
+<mo fence="false" maxsize="1.2em" minsize="1.2em" stretchy="true">
+                )
+               </mo>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="1.4226em">
+</mspace>
+<mtext mathvariant="bold">
+                else
+               </mtext>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="2.8453em">
+</mspace>
+<mover accent="true">
+<msub>
+<mi>
+                  v
+                 </mi>
+<mi>
+                  t
+                 </mi>
+</msub>
+<mo stretchy="true">
+                 ^
+                </mo>
+</mover>
+<mo>
+                ←
+               </mo>
+<msub>
+<mi>
+                 v
+                </mi>
+<mi>
+                 t
+                </mi>
+</msub>
+<mi mathvariant="normal">
+                /
+               </mi>
+<mo fence="false" maxsize="1.2em" minsize="1.2em" stretchy="true">
+                (
+               </mo>
+<mn>
+                1
+               </mn>
+<mo>
+                −
+               </mo>
+<msubsup>
+<mi>
+                 β
+                </mi>
+<mn>
+                 2
+                </mn>
+<mi>
+                 t
+                </mi>
+</msubsup>
+<mo fence="false" maxsize="1.2em" minsize="1.2em" stretchy="true">
+                )
+               </mo>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mspace width="1.4226em">
+</mspace>
+<msub>
+<mi>
+                 θ
+                </mi>
+<mi>
+                 t
+                </mi>
+</msub>
+<mo>
+                ←
+               </mo>
+<msub>
+<mi>
+                 θ
+                </mi>
+<mi>
+                 t
+                </mi>
+</msub>
+<mo>
+                −
+               </mo>
+<mi>
+                γ
+               </mi>
+<mover accent="true">
+<msub>
+<mi>
+                  m
+                 </mi>
+<mi>
+                  t
+                 </mi>
+</msub>
+<mo stretchy="true">
+                 ^
+                </mo>
+</mover>
+<mi mathvariant="normal">
+                /
+               </mi>
+<mo fence="false" maxsize="1.2em" minsize="1.2em" stretchy="true">
+                (
+               </mo>
+<msqrt>
+<mover accent="true">
+<msub>
+<mi>
+                   v
+                  </mi>
+<mi>
+                   t
+                  </mi>
+</msub>
+<mo stretchy="true">
+                  ^
+                 </mo>
+</mover>
+</msqrt>
+<mo>
+                +
+               </mo>
+<mi>
+                ϵ
+               </mi>
+<mo fence="false" maxsize="1.2em" minsize="1.2em" stretchy="true">
+                )
+               </mo>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mpadded height="0em" voffset="0em">
+<mspace height="0.04em" mathbackground="black" width="31.298em">
+</mspace>
+</mpadded>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mrow>
+<mrow>
+<mi mathvariant="bold">
+                  r
+                 </mi>
+<mi mathvariant="bold">
+                  e
+                 </mi>
+<mi mathvariant="bold">
+                  t
+                 </mi>
+<mi mathvariant="bold">
+                  u
+                 </mi>
+<mi mathvariant="bold">
+                  r
+                 </mi>
+<mi mathvariant="bold">
+                  n
+                 </mi>
+</mrow>
+<mtext>
+</mtext>
+<msub>
+<mi mathvariant="bold">
+                  θ
+                 </mi>
+<mi mathvariant="bold">
+                  t
+                 </mi>
+</msub>
+</mrow>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+<mtr>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+</mrow>
+</mstyle>
+</mtd>
+<mtd>
+<mstyle displaystyle="true" scriptlevel="0">
+<mrow>
+<mrow>
+</mrow>
+<mpadded height="0em" voffset="0em">
+<mspace height="0.04em" mathbackground="black" width="31.298em">
+</mspace>
+</mpadded>
+</mrow>
+</mstyle>
+</mtd>
+</mtr>
+</mtable>
+<annotation encoding="application/x-tex">
+           begin{aligned}
+     &amp;rule{110mm}{0.4pt} 
+     &amp;textbf{input} : gamma text{(lr)}, : beta_1, beta_2
+         text{(betas)}, : theta_0 text{(params)}, : f(theta) text{(objective)},
+         : epsilon text{ (epsilon)} 
+     &amp;hspace{13mm} lambda text{(weight decay)},  : textit{amsgrad},
+         : textit{maximize} 
+     &amp;textbf{initialize} : m_0 leftarrow 0 text{ (first moment)}, v_0 leftarrow 0
+         text{ ( second moment)}, : v_0^{max}leftarrow 0 [-1.ex]
+     &amp;rule{110mm}{0.4pt} 
+     &amp;textbf{for} : t=1 : textbf{to} : ldots : textbf{do} 
+
+     &amp;hspace{5mm}textbf{if} : textit{maximize}:                                       
+     &amp;hspace{10mm}g_t leftarrow -nabla_{theta} f_t (theta_{t-1}) 
+     &amp;hspace{5mm}textbf{else} 
+     &amp;hspace{10mm}g_t leftarrow nabla_{theta} f_t (theta_{t-1}) 
+     &amp;hspace{5mm} theta_t leftarrow theta_{t-1} - gamma lambda theta_{t-1} 
+     &amp;hspace{5mm}m_t leftarrow beta_1 m_{t-1} + (1 - beta_1) g_t 
+     &amp;hspace{5mm}v_t leftarrow beta_2 v_{t-1} + (1-beta_2) g^2_t 
+     &amp;hspace{5mm}widehat{m_t} leftarrow m_t/big(1-beta_1^t big) 
+     &amp;hspace{5mm}textbf{if} : amsgrad 
+     &amp;hspace{10mm} v_t^{max} leftarrow mathrm{max}(v_{t-1}^{max},v_t) 
+     &amp;hspace{10mm}widehat{v_t} leftarrow v_t^{max}/big(1-beta_2^t big) 
+     &amp;hspace{5mm}textbf{else} 
+     &amp;hspace{10mm}widehat{v_t} leftarrow v_t/big(1-beta_2^t big) 
+     &amp;hspace{5mm}theta_t leftarrow theta_t - gamma widehat{m_t}/
+         big(sqrt{widehat{v_t}} + epsilon big) 
+     &amp;rule{110mm}{0.4pt} [-1.ex]
+     &amp;bf{return} :  theta_t [-1.ex]
+     &amp;rule{110mm}{0.4pt} [-1.ex]
+end{aligned}
+          </annotation>
+</semantics>
+</math> -->
+input : γ (lr) , β 1 , β 2 (betas) , θ 0 (params) , f ( θ ) (objective) , ϵ (epsilon) λ (weight decay) , amsgrad , maximize initialize : m 0 ← 0 (first moment) , v 0 ← 0 ( second moment) , v 0 m a x ← 0 for t = 1 to … do if maximize : g t ← − ∇ θ f t ( θ t − 1 ) else g t ← ∇ θ f t ( θ t − 1 ) θ t ← θ t − 1 − γ λ θ t − 1 m t ← β 1 m t − 1 + ( 1 − β 1 ) g t v t ← β 2 v t − 1 + ( 1 − β 2 ) g t 2 m t ^ ← m t / ( 1 − β 1 t ) if a m s g r a d v t m a x ← m a x ( v t − 1 m a x , v t ) v t ^ ← v t m a x / ( 1 − β 2 t ) else v t ^ ← v t / ( 1 − β 2 t ) θ t ← θ t − γ m t ^ / ( v t ^ + ϵ ) r e t u r n θ t begin{aligned}
+ &rule{110mm}{0.4pt} 
+ &textbf{input} : gamma text{(lr)}, : beta_1, beta_2
+ text{(betas)}, : theta_0 text{(params)}, : f(theta) text{(objective)},
+ : epsilon text{ (epsilon)} 
+ &hspace{13mm} lambda text{(weight decay)}, : textit{amsgrad},
+ : textit{maximize} 
+ &textbf{initialize} : m_0 leftarrow 0 text{ (first moment)}, v_0 leftarrow 0
+ text{ ( second moment)}, : v_0^{max}leftarrow 0 [-1.ex]
+ &rule{110mm}{0.4pt} 
+ &textbf{for} : t=1 : textbf{to} : ldots : textbf{do} 
+
+ &hspace{5mm}textbf{if} : textit{maximize}: 
+ &hspace{10mm}g_t leftarrow -nabla_{theta} f_t (theta_{t-1}) 
+ &hspace{5mm}textbf{else} 
+ &hspace{10mm}g_t leftarrow nabla_{theta} f_t (theta_{t-1}) 
+ &hspace{5mm} theta_t leftarrow theta_{t-1} - gamma lambda theta_{t-1} 
+ &hspace{5mm}m_t leftarrow beta_1 m_{t-1} + (1 - beta_1) g_t 
+ &hspace{5mm}v_t leftarrow beta_2 v_{t-1} + (1-beta_2) g^2_t 
+ &hspace{5mm}widehat{m_t} leftarrow m_t/big(1-beta_1^t big) 
+ &hspace{5mm}textbf{if} : amsgrad 
+ &hspace{10mm} v_t^{max} leftarrow mathrm{max}(v_{t-1}^{max},v_t) 
+ &hspace{10mm}widehat{v_t} leftarrow v_t^{max}/big(1-beta_2^t big) 
+ &hspace{5mm}textbf{else} 
+ &hspace{10mm}widehat{v_t} leftarrow v_t/big(1-beta_2^t big) 
+ &hspace{5mm}theta_t leftarrow theta_t - gamma widehat{m_t}/
+ big(sqrt{widehat{v_t}} + epsilon big) 
+ &rule{110mm}{0.4pt} [-1.ex]
+ &bf{return} : theta_t [-1.ex]
+ &rule{110mm}{0.4pt} [-1.ex]
+end{aligned}
+
+​ input : γ (lr) , β 1 ​ , β 2 ​ (betas) , θ 0 ​ (params) , f ( θ ) (objective) , ϵ (epsilon) λ (weight decay) , amsgrad , maximize initialize : m 0 ​ ← 0 (first moment) , v 0 ​ ← 0 ( second moment) , v 0 ma x ​ ← 0 for t = 1 to … do if maximize : g t ​ ← − ∇ θ ​ f t ​ ( θ t − 1 ​ ) else g t ​ ← ∇ θ ​ f t ​ ( θ t − 1 ​ ) θ t ​ ← θ t − 1 ​ − γλ θ t − 1 ​ m t ​ ← β 1 ​ m t − 1 ​ + ( 1 − β 1 ​ ) g t ​ v t ​ ← β 2 ​ v t − 1 ​ + ( 1 − β 2 ​ ) g t 2 ​ m t ​ ![SVG Image](data:image/svg+xml;base64,PHN2ZyBoZWlnaHQ9IjAuMjRlbSIgcHJlc2VydmVhc3BlY3RyYXRpbz0ibm9uZSIgdmlld2JveD0iMCAwIDEwNjIgMjM5IiB3aWR0aD0iMTAwJSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTUyOSAwaDVsNTE5IDExNWM1IDEgOSA1IDkgMTAgMCAxLTEgMi0xIDNsLTQgMjIKYy0xIDUtNSA5LTExIDloLTJMNTMyIDY3IDE5IDE1OWgtMmMtNSAwLTktNC0xMS05bC01LTIyYy0xLTYgMi0xMiA4LTEzeiI+CjwvcGF0aD4KPC9zdmc+)​ ← m t ​ / ( 1 − β 1 t ​ ) if am s g r a d v t ma x ​ ← max ( v t − 1 ma x ​ , v t ​ ) v t ​ ![SVG Image](data:image/svg+xml;base64,PHN2ZyBoZWlnaHQ9IjAuMjRlbSIgcHJlc2VydmVhc3BlY3RyYXRpbz0ibm9uZSIgdmlld2JveD0iMCAwIDEwNjIgMjM5IiB3aWR0aD0iMTAwJSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTUyOSAwaDVsNTE5IDExNWM1IDEgOSA1IDkgMTAgMCAxLTEgMi0xIDNsLTQgMjIKYy0xIDUtNSA5LTExIDloLTJMNTMyIDY3IDE5IDE1OWgtMmMtNSAwLTktNC0xMS05bC01LTIyYy0xLTYgMi0xMiA4LTEzeiI+CjwvcGF0aD4KPC9zdmc+)​ ← v t ma x ​ / ( 1 − β 2 t ​ ) else v t ​ ![SVG Image](data:image/svg+xml;base64,PHN2ZyBoZWlnaHQ9IjAuMjRlbSIgcHJlc2VydmVhc3BlY3RyYXRpbz0ibm9uZSIgdmlld2JveD0iMCAwIDEwNjIgMjM5IiB3aWR0aD0iMTAwJSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTUyOSAwaDVsNTE5IDExNWM1IDEgOSA1IDkgMTAgMCAxLTEgMi0xIDNsLTQgMjIKYy0xIDUtNSA5LTExIDloLTJMNTMyIDY3IDE5IDE1OWgtMmMtNSAwLTktNC0xMS05bC01LTIyYy0xLTYgMi0xMiA4LTEzeiI+CjwvcGF0aD4KPC9zdmc+)​ ← v t ​ / ( 1 − β 2 t ​ ) θ t ​ ← θ t ​ − γ m t ​ ![SVG Image](data:image/svg+xml;base64,PHN2ZyBoZWlnaHQ9IjAuMjRlbSIgcHJlc2VydmVhc3BlY3RyYXRpbz0ibm9uZSIgdmlld2JveD0iMCAwIDEwNjIgMjM5IiB3aWR0aD0iMTAwJSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTUyOSAwaDVsNTE5IDExNWM1IDEgOSA1IDkgMTAgMCAxLTEgMi0xIDNsLTQgMjIKYy0xIDUtNSA5LTExIDloLTJMNTMyIDY3IDE5IDE1OWgtMmMtNSAwLTktNC0xMS05bC01LTIyYy0xLTYgMi0xMiA4LTEzeiI+CjwvcGF0aD4KPC9zdmc+)​ / ( v t ​ ![SVG Image](data:image/svg+xml;base64,PHN2ZyBoZWlnaHQ9IjAuMjRlbSIgcHJlc2VydmVhc3BlY3RyYXRpbz0ibm9uZSIgdmlld2JveD0iMCAwIDEwNjIgMjM5IiB3aWR0aD0iMTAwJSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTUyOSAwaDVsNTE5IDExNWM1IDEgOSA1IDkgMTAgMCAxLTEgMi0xIDNsLTQgMjIKYy0xIDUtNSA5LTExIDloLTJMNTMyIDY3IDE5IDE1OWgtMmMtNSAwLTktNC0xMS05bC01LTIyYy0xLTYgMi0xMiA4LTEzeiI+CjwvcGF0aD4KPC9zdmc+)​ ![SVG Image](data:image/svg+xml;base64,PHN2ZyBoZWlnaHQ9IjEuMjhlbSIgcHJlc2VydmVhc3BlY3RyYXRpbz0ieE1pbllNaW4gc2xpY2UiIHZpZXdib3g9IjAgMCA0MDAwMDAgMTI5NiIgd2lkdGg9IjQwMGVtIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cGF0aCBkPSJNMjYzLDY4MWMwLjcsMCwxOCwzOS43LDUyLDExOQpjMzQsNzkuMyw2OC4xNjcsMTU4LjcsMTAyLjUsMjM4YzM0LjMsNzkuMyw1MS44LDExOS4zLDUyLjUsMTIwCmMzNDAsLTcwNC43LDUxMC43LC0xMDYwLjMsNTEyLC0xMDY3CmwwIC0wCmM0LjcsLTcuMywxMSwtMTEsMTksLTExCkg0MDAwMHY0MEgxMDEyLjMKcy0yNzEuMyw1NjcsLTI3MS4zLDU2N2MtMzguNyw4MC43LC04NCwxNzUsLTEzNiwyODNjLTUyLDEwOCwtODkuMTY3LDE4NS4zLC0xMTEuNSwyMzIKYy0yMi4zLDQ2LjcsLTMzLjgsNzAuMywtMzQuNSw3MWMtNC43LDQuNywtMTIuMyw3LC0yMyw3cy0xMiwtMSwtMTIsLTEKcy0xMDksLTI1MywtMTA5LC0yNTNjLTcyLjcsLTE2OCwtMTA5LjMsLTI1MiwtMTEwLC0yNTJjLTEwLjcsOCwtMjIsMTYuNywtMzQsMjYKYy0yMiwxNy4zLC0zMy4zLDI2LC0zNCwyNnMtMjYsLTI2LC0yNiwtMjZzNzYsLTU5LDc2LC01OXM3NiwtNjAsNzYsLTYwegpNMTAwMSA4MGg0MDAwMDB2NDBoLTQwMDAwMHoiPgo8L3BhdGg+Cjwvc3ZnPg==)​ + ϵ ) return θ t ​ ​
+
+For further details regarding the algorithm we refer to [Decoupled Weight Decay Regularization](https://arxiv.org/abs/1711.05101)  . 
+
+Parameters
+:   * **params** ( *iterable*  ) – iterable of parameters or named_parameters to optimize
+or iterable of dicts defining parameter groups. When using named_parameters,
+all parameters in all groups should be named
+* **lr** ( [*float*](https://docs.python.org/3/library/functions.html#float "(in Python v3.13)") *,* [*Tensor*](../tensors.html#torch.Tensor "torch.Tensor") *,* *optional*  ) – learning rate (default: 1e-3). A tensor LR
+is not yet supported for all our implementations. Please use a float
+LR if you are not also specifying fused=True or capturable=True.
+* **betas** ( *Tuple* *[* [*float*](https://docs.python.org/3/library/functions.html#float "(in Python v3.13)") *,* [*float*](https://docs.python.org/3/library/functions.html#float "(in Python v3.13)") *]* *,* *optional*  ) – coefficients used for computing
+running averages of gradient and its square (default: (0.9, 0.999))
+* **eps** ( [*float*](https://docs.python.org/3/library/functions.html#float "(in Python v3.13)") *,* *optional*  ) – term added to the denominator to improve
+numerical stability (default: 1e-8)
+* **weight_decay** ( [*float*](https://docs.python.org/3/library/functions.html#float "(in Python v3.13)") *,* *optional*  ) – weight decay coefficient (default: 1e-2)
+* **amsgrad** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)") *,* *optional*  ) – whether to use the AMSGrad variant of this
+algorithm from the paper [On the Convergence of Adam and Beyond](https://openreview.net/forum?id=ryQu7f-RZ)  (default: False)
+* **maximize** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)") *,* *optional*  ) – maximize the objective with respect to the
+params, instead of minimizing (default: False)
+* **foreach** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)") *,* *optional*  ) – whether foreach implementation of optimizer
+is used. If unspecified by the user (so foreach is None), we will try to use
+foreach over the for-loop implementation on CUDA, since it is usually
+significantly more performant. Note that the foreach implementation uses
+~ sizeof(params) more peak memory than the for-loop version due to the intermediates
+being a tensorlist vs just one tensor. If memory is prohibitive, batch fewer
+parameters through the optimizer at a time or switch this flag to False (default: None)
+* **capturable** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)") *,* *optional*  ) – whether this instance is safe to
+capture in a graph, whether for CUDA graphs or for torch.compile support.
+Tensors are only capturable when on supported [accelerators](../torch.html#accelerators)  .
+Passing True can impair ungraphed performance, so if you don’t intend to graph
+capture this instance, leave it False (default: False)
+* **differentiable** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)") *,* *optional*  ) – whether autograd should
+occur through the optimizer step in training. Otherwise, the step()
+function runs in a torch.no_grad() context. Setting to True can impair
+performance, so leave it False if you don’t intend to run autograd
+through this instance (default: False)
+* **fused** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)") *,* *optional*  ) – whether the fused implementation is used.
+Currently, *torch.float64* , *torch.float32* , *torch.float16* , and *torch.bfloat16* are supported. (default: None)
+
+Note 
+
+The foreach and fused implementations are typically faster than the for-loop,
+single-tensor implementation, with fused being theoretically fastest with both
+vertical and horizontal fusion. As such, if the user has not specified either
+flag (i.e., when foreach = fused = None), we will attempt defaulting to the foreach
+implementation when the tensors are all on CUDA. Why not fused? Since the fused
+implementation is relatively new, we want to give it sufficient bake-in time.
+To specify fused, pass True for fused. To force running the for-loop
+implementation, pass False for either foreach or fused.
+
+Note 
+
+A prototype implementation of Adam and AdamW for MPS supports *torch.float32* and *torch.float16* .
+
+add_param_group ( *param_group* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/optim/optimizer.py#L1066) 
+:   Add a param group to the [`Optimizer`](../optim.html#torch.optim.Optimizer "torch.optim.Optimizer")  s *param_groups* . 
+
+This can be useful when fine tuning a pre-trained network as frozen layers can be made
+trainable and added to the [`Optimizer`](../optim.html#torch.optim.Optimizer "torch.optim.Optimizer")  as training progresses. 
+
+Parameters
+: **param_group** ( [*dict*](https://docs.python.org/3/library/stdtypes.html#dict "(in Python v3.13)")  ) – Specifies what Tensors should be optimized along with group
+specific optimization options.
+
+load_state_dict ( *state_dict* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/optim/optimizer.py#L865) 
+:   Load the optimizer state. 
+
+Parameters
+: **state_dict** ( [*dict*](https://docs.python.org/3/library/stdtypes.html#dict "(in Python v3.13)")  ) – optimizer state. Should be an object returned
+from a call to [`state_dict()`](#torch.optim.AdamW.state_dict "torch.optim.AdamW.state_dict")  .
+
+Warning 
+
+Make sure this method is called after initializing [`torch.optim.lr_scheduler.LRScheduler`](torch.optim.lr_scheduler.LRScheduler.html#torch.optim.lr_scheduler.LRScheduler "torch.optim.lr_scheduler.LRScheduler")  ,
+as calling it beforehand will overwrite the loaded learning rates.
+
+Note 
+
+The names of the parameters (if they exist under the “param_names” key of each param group
+in [`state_dict()`](#torch.optim.AdamW.state_dict "torch.optim.AdamW.state_dict")  ) will not affect the loading process.
+To use the parameters’ names for custom cases (such as when the parameters in the loaded state dict
+differ from those initialized in the optimizer),
+a custom `register_load_state_dict_pre_hook`  should be implemented to adapt the loaded dict
+accordingly.
+If `param_names`  exist in loaded state dict `param_groups`  they will be saved and override
+the current names, if present, in the optimizer state. If they do not exist in loaded state dict,
+the optimizer `param_names`  will remain unchanged.
+
+Example 
+
+```
+>>> model = torch.nn.Linear(10, 10)
+>>> optim = torch.optim.SGD(model.parameters(), lr=3e-4)
+>>> scheduler1 = torch.optim.lr_scheduler.LinearLR(
+...     optim,
+...     start_factor=0.1,
+...     end_factor=1,
+...     total_iters=20,
+... )
+>>> scheduler2 = torch.optim.lr_scheduler.CosineAnnealingLR(
+...     optim,
+...     T_max=80,
+...     eta_min=3e-5,
+... )
+>>> lr = torch.optim.lr_scheduler.SequentialLR(
+...     optim,
+...     schedulers=[scheduler1, scheduler2],
+...     milestones=[20],
+... )
+>>> lr.load_state_dict(torch.load("./save_seq.pt"))
+>>> # now load the optimizer checkpoint after loading the LRScheduler
+>>> optim.load_state_dict(torch.load("./save_optim.pt"))
+
+```
+
+register_load_state_dict_post_hook ( *hook*  , *prepend = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/optim/optimizer.py#L829) 
+:   Register a load_state_dict post-hook which will be called after [`load_state_dict()`](torch.optim.Optimizer.load_state_dict.html#torch.optim.Optimizer.load_state_dict "torch.optim.Optimizer.load_state_dict")  is called. It should have the
+following signature: 
+
+```
+hook(optimizer) -> None
+
+```
+
+The `optimizer`  argument is the optimizer instance being used. 
+
+The hook will be called with argument `self`  after calling `load_state_dict`  on `self`  . The registered hook can be used to
+perform post-processing after `load_state_dict`  has loaded the `state_dict`  . 
+
+Parameters
+:   * **hook** ( *Callable*  ) – The user defined hook to be registered.
+* **prepend** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")  ) – If True, the provided post `hook`  will be fired before
+all the already registered post-hooks on `load_state_dict`  . Otherwise,
+the provided `hook`  will be fired after all the already registered
+post-hooks. (default: False)
+
+Returns
+:   a handle that can be used to remove the added hook by calling `handle.remove()`
+
+Return type
+:   `torch.utils.hooks.RemoveableHandle`
+
+register_load_state_dict_pre_hook ( *hook*  , *prepend = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/optim/optimizer.py#L790) 
+:   Register a load_state_dict pre-hook which will be called before [`load_state_dict()`](torch.optim.Optimizer.load_state_dict.html#torch.optim.Optimizer.load_state_dict "torch.optim.Optimizer.load_state_dict")  is called. It should have the
+following signature: 
+
+```
+hook(optimizer, state_dict) -> state_dict or None
+
+```
+
+The `optimizer`  argument is the optimizer instance being used and the `state_dict`  argument is a shallow copy of the `state_dict`  the user
+passed in to `load_state_dict`  . The hook may modify the state_dict inplace
+or optionally return a new one. If a state_dict is returned, it will be used
+to be loaded into the optimizer. 
+
+The hook will be called with argument `self`  and `state_dict`  before
+calling `load_state_dict`  on `self`  . The registered hook can be used to
+perform pre-processing before the `load_state_dict`  call is made. 
+
+Parameters
+:   * **hook** ( *Callable*  ) – The user defined hook to be registered.
+* **prepend** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")  ) – If True, the provided pre `hook`  will be fired before
+all the already registered pre-hooks on `load_state_dict`  . Otherwise,
+the provided `hook`  will be fired after all the already registered
+pre-hooks. (default: False)
+
+Returns
+:   a handle that can be used to remove the added hook by calling `handle.remove()`
+
+Return type
+:   `torch.utils.hooks.RemoveableHandle`
+
+register_state_dict_post_hook ( *hook*  , *prepend = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/optim/optimizer.py#L632) 
+:   Register a state dict post-hook which will be called after [`state_dict()`](torch.optim.Optimizer.state_dict.html#torch.optim.Optimizer.state_dict "torch.optim.Optimizer.state_dict")  is called. 
+
+It should have the following signature: 
+
+```
+hook(optimizer, state_dict) -> state_dict or None
+
+```
+
+The hook will be called with arguments `self`  and `state_dict`  after generating
+a `state_dict`  on `self`  . The hook may modify the state_dict inplace or optionally
+return a new one. The registered hook can be used to perform post-processing
+on the `state_dict`  before it is returned. 
+
+Parameters
+:   * **hook** ( *Callable*  ) – The user defined hook to be registered.
+* **prepend** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")  ) – If True, the provided post `hook`  will be fired before
+all the already registered post-hooks on `state_dict`  . Otherwise,
+the provided `hook`  will be fired after all the already registered
+post-hooks. (default: False)
+
+Returns
+:   a handle that can be used to remove the added hook by calling `handle.remove()`
+
+Return type
+:   `torch.utils.hooks.RemoveableHandle`
+
+register_state_dict_pre_hook ( *hook*  , *prepend = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/optim/optimizer.py#L600) 
+:   Register a state dict pre-hook which will be called before [`state_dict()`](torch.optim.Optimizer.state_dict.html#torch.optim.Optimizer.state_dict "torch.optim.Optimizer.state_dict")  is called. 
+
+It should have the following signature: 
+
+```
+hook(optimizer) -> None
+
+```
+
+The `optimizer`  argument is the optimizer instance being used.
+The hook will be called with argument `self`  before calling `state_dict`  on `self`  .
+The registered hook can be used to perform pre-processing before the `state_dict`  call is made. 
+
+Parameters
+:   * **hook** ( *Callable*  ) – The user defined hook to be registered.
+* **prepend** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")  ) – If True, the provided pre `hook`  will be fired before
+all the already registered pre-hooks on `state_dict`  . Otherwise,
+the provided `hook`  will be fired after all the already registered
+pre-hooks. (default: False)
+
+Returns
+:   a handle that can be used to remove the added hook by calling `handle.remove()`
+
+Return type
+:   `torch.utils.hooks.RemoveableHandle`
+
+register_step_post_hook ( *hook* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/optim/optimizer.py#L579) 
+:   Register an optimizer step post hook which will be called after optimizer step. 
+
+It should have the following signature: 
+
+```
+hook(optimizer, args, kwargs) -> None
+
+```
+
+The `optimizer`  argument is the optimizer instance being used. 
+
+Parameters
+: **hook** ( *Callable*  ) – The user defined hook to be registered.
+
+Returns
+:   a handle that can be used to remove the added hook by calling `handle.remove()`
+
+Return type
+:   `torch.utils.hooks.RemovableHandle`
+
+register_step_pre_hook ( *hook* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/optim/optimizer.py#L556) 
+:   Register an optimizer step pre hook which will be called before optimizer step. 
+
+It should have the following signature: 
+
+```
+hook(optimizer, args, kwargs) -> None or modified args and kwargs
+
+```
+
+The `optimizer`  argument is the optimizer instance being used. If
+args and kwargs are modified by the pre-hook, then the transformed
+values are returned as a tuple containing the new_args and new_kwargs. 
+
+Parameters
+: **hook** ( *Callable*  ) – The user defined hook to be registered.
+
+Returns
+:   a handle that can be used to remove the added hook by calling `handle.remove()`
+
+Return type
+:   `torch.utils.hooks.RemovableHandle`
+
+state_dict ( ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/optim/optimizer.py#L666) 
+:   Return the state of the optimizer as a [`dict`](https://docs.python.org/3/library/stdtypes.html#dict "(in Python v3.13)")  . 
+
+It contains two entries: 
+
+* `state`  : a Dict holding current optimization state. Its content
+:   differs between optimizer classes, but some common characteristics
+hold. For example, state is saved per parameter, and the parameter
+itself is NOT saved. `state`  is a Dictionary mapping parameter ids
+to a Dict with state corresponding to each parameter.
+* `param_groups`  : a List containing all parameter groups where each
+:   parameter group is a Dict. Each parameter group contains metadata
+specific to the optimizer, such as learning rate and weight decay,
+as well as a List of parameter IDs of the parameters in the group.
+If a param group was initialized with `named_parameters()`  the names
+content will also be saved in the state dict.
+
+NOTE: The parameter IDs may look like indices but they are just IDs
+associating state with param_group. When loading from a state_dict,
+the optimizer will zip the param_group `params`  (int IDs) and the
+optimizer `param_groups`  (actual `nn.Parameter`  s) in order to
+match state WITHOUT additional verification. 
+
+A returned state dict might look something like: 
+
+```
+{
+    'state': {
+        0: {'momentum_buffer': tensor(...), ...},
+        1: {'momentum_buffer': tensor(...), ...},
+        2: {'momentum_buffer': tensor(...), ...},
+        3: {'momentum_buffer': tensor(...), ...}
+    },
+    'param_groups': [
+        {
+            'lr': 0.01,
+            'weight_decay': 0,
+            ...
+            'params': [0]
+            'param_names' ['param0']  (optional)
+        },
+        {
+            'lr': 0.001,
+            'weight_decay': 0.5,
+            ...
+            'params': [1, 2, 3]
+            'param_names': ['param1', 'layer.weight', 'layer.bias'] (optional)
+        }
+    ]
+}
+
+```
+
+Return type
+:   [dict](https://docs.python.org/3/library/stdtypes.html#dict "(in Python v3.13)")  [ [str](https://docs.python.org/3/library/stdtypes.html#str "(in Python v3.13)")  , [*Any*](https://docs.python.org/3/library/typing.html#typing.Any "(in Python v3.13)")  ]
+
+step ( *closure = None* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/optim/adam.py#L213) 
+:   Perform a single optimization step. 
+
+Parameters
+: **closure** ( *Callable* *,* *optional*  ) – A closure that reevaluates the model
+and returns the loss.
+
+zero_grad ( *set_to_none = True* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/optim/optimizer.py#L996) 
+:   Reset the gradients of all optimized [`torch.Tensor`](../tensors.html#torch.Tensor "torch.Tensor")  s. 
+
+Parameters
+: **set_to_none** ( [*bool*](https://docs.python.org/3/library/functions.html#bool "(in Python v3.13)")  ) – instead of setting to zero, set the grads to None.
+This will in general have lower memory footprint, and can modestly improve performance.
+However, it changes certain behaviors. For example:
+1. When the user tries to access a gradient and perform manual ops on it,
+a None attribute or a Tensor full of 0s will behave differently.
+2. If the user requests `zero_grad(set_to_none=True)`  followed by a backward pass, `.grad`  s
+are guaranteed to be None for params that did not receive a gradient.
+3. `torch.optim`  optimizers have a different behavior if the gradient is 0 or None
+(in one case it does the step with a gradient of 0 and in the other it skips
+the step altogether).
+

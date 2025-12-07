@@ -1,0 +1,79 @@
+torch.atan 
+========================================================
+
+torch. atan ( *input : [Tensor](../tensors.html#torch.Tensor "torch.Tensor")*  , *** , *out : Optional [ [Tensor](../tensors.html#torch.Tensor "torch.Tensor") ]* ) → [Tensor](../tensors.html#torch.Tensor "torch.Tensor") 
+:   Returns a new tensor with the arctangent of the elements of `input`  . 
+
+<!-- MathML: <math display="block" xmlns="http://www.w3.org/1998/Math/MathML">
+<semantics>
+<mrow>
+<msub>
+<mtext>
+             out
+            </mtext>
+<mi>
+             i
+            </mi>
+</msub>
+<mo>
+            =
+           </mo>
+<msup>
+<mrow>
+<mi>
+              tan
+             </mi>
+<mo>
+              ⁡
+             </mo>
+</mrow>
+<mrow>
+<mo>
+              −
+             </mo>
+<mn>
+              1
+             </mn>
+</mrow>
+</msup>
+<mo stretchy="false">
+            (
+           </mo>
+<msub>
+<mtext>
+             input
+            </mtext>
+<mi>
+             i
+            </mi>
+</msub>
+<mo stretchy="false">
+            )
+           </mo>
+</mrow>
+<annotation encoding="application/x-tex">
+           text{out}_{i} = tan^{-1}(text{input}_{i})
+          </annotation>
+</semantics>
+</math> -->
+out i = tan ⁡ − 1 ( input i ) text{out}_{i} = tan^{-1}(text{input}_{i})
+
+out i ​ = tan − 1 ( input i ​ )
+
+Parameters
+: **input** ( [*Tensor*](../tensors.html#torch.Tensor "torch.Tensor")  ) – the input tensor.
+
+Keyword Arguments
+: **out** ( [*Tensor*](../tensors.html#torch.Tensor "torch.Tensor") *,* *optional*  ) – the output tensor.
+
+Example: 
+
+```
+>>> a = torch.randn(4)
+>>> a
+tensor([ 0.2341,  0.2539, -0.6256, -0.6448])
+>>> torch.atan(a)
+tensor([ 0.2299,  0.2487, -0.5591, -0.5727])
+
+```
+

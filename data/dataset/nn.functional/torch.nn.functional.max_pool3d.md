@@ -1,0 +1,78 @@
+torch.nn.functional.max_pool3d 
+=================================================================================================
+
+torch.nn.functional. max_pool3d ( *input*  , *kernel_size*  , *stride = None*  , *padding = 0*  , *dilation = 1*  , *ceil_mode = False*  , *return_indices = False* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/_jit_internal.py#L617) 
+:   Applies a 3D max pooling over an input signal composed of several input
+planes. 
+
+Note 
+
+The order of `ceil_mode`  and `return_indices`  is different from
+what seen in [`MaxPool3d`](torch.nn.MaxPool3d.html#torch.nn.MaxPool3d "torch.nn.MaxPool3d")  , and will change in a future release.
+
+See [`MaxPool3d`](torch.nn.MaxPool3d.html#torch.nn.MaxPool3d "torch.nn.MaxPool3d")  for details. 
+
+Parameters
+:   * **input** – input tensor <!-- MathML: <math xmlns="http://www.w3.org/1998/Math/MathML">
+<semantics>
+<mrow>
+<mo stretchy="false">
+                (
+               </mo>
+<mtext>
+                minibatch
+               </mtext>
+<mo separator="true">
+                ,
+               </mo>
+<mtext>
+                in_channels
+               </mtext>
+<mo separator="true">
+                ,
+               </mo>
+<mi>
+                i
+               </mi>
+<mi>
+                D
+               </mi>
+<mo separator="true">
+                ,
+               </mo>
+<mi>
+                i
+               </mi>
+<mi>
+                H
+               </mi>
+<mo separator="true">
+                ,
+               </mo>
+<mi>
+                i
+               </mi>
+<mi>
+                W
+               </mi>
+<mo stretchy="false">
+                )
+               </mo>
+</mrow>
+<annotation encoding="application/x-tex">
+               (text{minibatch} , text{in_channels} , iD, iH , iW)
+              </annotation>
+</semantics>
+</math> -->( minibatch , in_channels , i D , i H , i W ) (text{minibatch} , text{in_channels} , iD, iH , iW)( minibatch , in_channels , i D , i H , iW )  , minibatch dim optional.
+
+* **kernel_size** – size of the pooling region. Can be a single number or a
+tuple *(kT, kH, kW)*
+* **stride** – stride of the pooling operation. Can be a single number or a
+tuple *(sT, sH, sW)* . Default: `kernel_size`
+* **padding** – Implicit negative infinity padding to be added on both sides, must be >= 0 and <= kernel_size / 2.
+* **dilation** – The stride between elements within a sliding window, must be > 0.
+* **ceil_mode** – If `True`  , will use *ceil* instead of *floor* to compute the output shape. This
+ensures that every element in the input tensor is covered by a sliding window.
+* **return_indices** – If `True`  , will return the argmax along with the max values.
+Useful for [`torch.nn.functional.max_unpool3d`](torch.nn.functional.max_unpool3d.html#torch.nn.functional.max_unpool3d "torch.nn.functional.max_unpool3d")  later
+

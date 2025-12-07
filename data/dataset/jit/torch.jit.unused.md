@@ -1,0 +1,48 @@
+torch.jit.unused 
+====================================================================
+
+torch.jit. unused ( *fn* ) [source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/_jit_internal.py#L719) 
+:   This decorator indicates to the compiler that a function or method should
+be ignored and replaced with the raising of an exception. This allows you
+to leave code in your model that is not yet TorchScript compatible and still
+export your model. 
+
+> Example (using `@torch.jit.unused`  on a method): 
+> 
+> ```
+> import torch
+> import torch.nn as nn
+> 
+> 
+> class MyModule(nn.Module):
+>     def __init__(self, use_memory_efficient):
+>         super().__init__()
+>         self.use_memory_efficient = use_memory_efficient
+> 
+>     @torch.jit.unused
+>     def memory_efficient(self, x):
+>         import pdb
+> 
+>         pdb.set_trace()
+>         return x + 10
+> 
+>     def forward(self, x):
+>         # Use not-yet-scriptable memory efficient mode
+>         if self.use_memory_efficient:
+>             return self.memory_efficient(x)
+>         else:
+>             return x + 10
+> 
+> 
+> m = torch.jit.script(MyModule(use_memory_efficient=False))
+> m.save("m.pt")
+> 
+> m = torch.jit.script(MyModule(use_memory_efficient=True))
+> # exception raised
+> m(torch.rand(100))
+> 
+> ```
+
+Return type
+:   [*Callable*](https://docs.python.org/3/library/typing.html#typing.Callable "(in Python v3.13)")  [[~_P], *_R*  ]
+

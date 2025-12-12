@@ -10,7 +10,9 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    API_URL: str = "http://localhost:8000/api/query"
+    API_URL: str = "http://localhost:8000/forward"
+    API_HISTORY_URL: str = "http://localhost:8000/history"
+    API_STATS_URL: str = "http://localhost:8000/stats"
     TGBOT_TOKEN: str
     ALLOWED_USERS: list[int]
 

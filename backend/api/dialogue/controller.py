@@ -24,16 +24,8 @@ from .models import (
 def generate_pre_generated_queries() -> list[PreGeneratedQuery]:
     return [
         PreGeneratedQuery(
-            query="How does torch.autograd work for automatic differentiation?",
-            icon=IconsEnum.doc,
-        ),
-        PreGeneratedQuery(
             query="What's the difference between torch.nn.Module and torch.nn.functional?",
             icon=IconsEnum.database,
-        ),
-        PreGeneratedQuery(
-            query="How to properly configure a torch learning rate scheduler?",
-            icon=IconsEnum.browser,
         ),
     ]
 
@@ -106,9 +98,7 @@ Title:"""
         chat_model = rag_service.chat_model
 
         if hasattr(chat_model, "invoke_once"):
-            response = chat_model.invoke_once(
-                messages, max_tokens=16, temperature=0.2
-            )
+            response = chat_model.invoke_once(messages, max_tokens=16, temperature=0.2)
         else:
             response = chat_model.invoke(messages, max_tokens=16, temperature=0.2)
 

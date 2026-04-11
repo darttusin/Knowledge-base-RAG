@@ -7,7 +7,7 @@ import {
   createConversation,
   updateConversation as apiUpdateConversation,
   deleteConversation as apiDeleteConversation,
-  sendMessage as apiSendMessage,
+  sendMessageStream as apiSendMessageStream,
   getDocuments,
   getPreGeneratedQueries,
 } from "@/lib/api"
@@ -52,6 +52,26 @@ interface ChatActions {
 }
 
 type ChatStore = ChatState & ChatActions
+let activeStreamController: AbortController | null = null
+
+interface StreamSourceReference {
+  source_id: number
+  document_name: string
+  chunk_text: string
+  relevance_score: number
+  folder_path?: string | null
+}
+
+const mapSources = (sources: StreamSourceReference[], messageId: string): Source[] =>
+  sources.map((sourceRef, idx) => ({
+    id: `source-${messageId}-${idx}`,
+    title: sourceRef.document_name,
+    content: sourceRef.chunk_text,
+    relevance: sourceRef.relevance_score,
+    type: "document" as const,
+    documentId: sourceRef.source_id.toString(),
+    folderPath: sourceRef.folder_path || undefined,
+  }))
 
 export const useChatStore = create<ChatStore>()(
   devtools(
@@ -312,79 +332,129 @@ export const useChatStore = create<ChatStore>()(
         // Check if this is first message (for title update)
         const isFirstMessage = (activeConversation.messages?.length || 0) === 0
 
-        // Send to API
-        const result = await apiSendMessage(parseInt(activeConversation.id), content)
+        const tempAssistantId = `assistant-stream-${Date.now()}`
+        const tempAssistant: Message = {
+          id: tempAssistantId,
+          role: "assistant",
+          content: "",
+          status: "streaming" as const,
+          timestamp: new Date(),
+        }
 
-        if (result.success) {
-          // Convert backend source references to frontend Source type
-          const sources = result.data.sources.map((sourceRef, idx) => ({
-            id: `source-${result.data.messageId}-${idx}`,
-            title: sourceRef.document_name,
-            content: sourceRef.chunk_text,
-            relevance: sourceRef.relevance_score,
-            type: "document" as const,
-            documentId: sourceRef.source_id.toString(),
-            folderPath: sourceRef.folder_path || undefined,
-          }))
+        set((state) => ({
+          activeConversation:
+            state.activeConversation?.id === activeConversation.id
+              ? {
+                  ...state.activeConversation,
+                  messages: [...(state.activeConversation.messages || []), tempAssistant],
+                }
+              : state.activeConversation,
+          conversations: state.conversations.map((c) =>
+            c.id === activeConversation.id
+              ? { ...c, messages: [...(c.messages || []), tempAssistant] }
+              : c
+          ),
+        }))
 
-          const assistantMessage: Message = {
-            id: result.data.messageId,
-            role: "assistant",
-            content: result.data.assistantMessage,
-            sources,
-            timestamp: new Date(),
-          }
+        activeStreamController?.abort()
+        activeStreamController = new AbortController()
 
-          set((state) => {
-            const updatedActiveConversation =
-              state.activeConversation?.id === activeConversation.id
-                ? {
-                    ...state.activeConversation,
-                    messages: [...(state.activeConversation.messages || []), assistantMessage],
-                    updatedAt: new Date(),
-                  }
-                : state.activeConversation
+        let completed = false
+        await apiSendMessageStream(
+          parseInt(activeConversation.id),
+          content,
+          {
+            onChunk: (delta) => {
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId ? { ...msg, content: msg.content + delta } : msg
+                  )
+                return {
+                  activeConversation:
+                    state.activeConversation?.id === activeConversation.id
+                      ? { ...state.activeConversation, messages: patchMessages(state.activeConversation.messages) }
+                      : state.activeConversation,
+                  conversations: state.conversations.map((c) =>
+                    c.id === activeConversation.id ? { ...c, messages: patchMessages(c.messages) } : c
+                  ),
+                }
+              })
+            },
+            onComplete: (event) => {
+              completed = true
+              const messageId = event.message_id.toString()
+              const sources = mapSources(event.sources, messageId)
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId
+                      ? { ...msg, id: messageId, sources, status: "completed" as const, timestamp: new Date(event.created_at) }
+                      : msg
+                  )
+                const updatedActiveConversation =
+                  state.activeConversation?.id === activeConversation.id
+                    ? { ...state.activeConversation, messages: patchMessages(state.activeConversation.messages), updatedAt: new Date() }
+                    : state.activeConversation
+                const updatedConversations = state.conversations.map((c) =>
+                  c.id === activeConversation.id ? { ...c, messages: patchMessages(c.messages), updatedAt: new Date() } : c
+                )
+                const allSources = (updatedActiveConversation?.messages || []).flatMap((msg) => msg.sources || [])
+                return {
+                  activeConversation: updatedActiveConversation,
+                  conversations: updatedConversations,
+                  selectedSources: allSources,
+                  isWaitingForResponse: false,
+                  waitingConversationId: null,
+                }
+              })
+            },
+            onError: (error) => {
+              const isCancelled = error.code === "ABORT"
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId
+                      ? { ...msg, status: (isCancelled ? "cancelled" : "error") as "cancelled" | "error" }
+                      : msg
+                  )
+                return {
+                  activeConversation:
+                    state.activeConversation?.id === activeConversation.id
+                      ? { ...state.activeConversation, messages: patchMessages(state.activeConversation.messages) }
+                      : state.activeConversation,
+                  conversations: state.conversations.map((c) =>
+                    c.id === activeConversation.id ? { ...c, messages: patchMessages(c.messages) } : c
+                  ),
+                  isWaitingForResponse: false,
+                  waitingConversationId: null,
+                }
+              })
+              if (!isCancelled) {
+                toast.error(`Failed to send message: ${error.message}`)
+              }
+            },
+          },
+          activeStreamController.signal
+        )
 
-            const updatedConversations = state.conversations.map((c) =>
-              c.id === activeConversation.id
-                ? {
-                    ...c,
-                    messages: [...(c.messages || []), assistantMessage],
-                    updatedAt: new Date(),
-                  }
-                : c
-            )
-
-            // Add new sources to existing ones
-            const newSources = assistantMessage.sources || []
-            const allSources = [...state.selectedSources, ...newSources]
-
-            return {
-              activeConversation: updatedActiveConversation,
-              conversations: updatedConversations,
-              selectedSources: allSources,
-              isWaitingForResponse: false,
-              waitingConversationId: null,
-            }
-          })
-
-          // If this was first message, reload conversation to get updated title
-          if (isFirstMessage) {
-            const updatedConvo = await getConversation(activeConversation.id)
-            if (updatedConvo.success) {
-              set((state) => ({
-                activeConversation: state.activeConversation
-                  ? { ...state.activeConversation, title: updatedConvo.data.title }
-                  : null,
-                conversations: state.conversations.map((c) =>
-                  c.id === activeConversation.id ? { ...c, title: updatedConvo.data.title } : c
-                ),
-              }))
-            }
-          }
-        } else {
+        if (!completed) {
           set({ isWaitingForResponse: false, waitingConversationId: null })
-          toast.error(`Failed to send message: ${result.error}`)
+        }
+
+        // If this was first message, reload conversation to get updated title
+        if (completed && isFirstMessage) {
+          const updatedConvo = await getConversation(activeConversation.id)
+          if (updatedConvo.success) {
+            set((state) => ({
+              activeConversation: state.activeConversation
+                ? { ...state.activeConversation, title: updatedConvo.data.title }
+                : null,
+              conversations: state.conversations.map((c) =>
+                c.id === activeConversation.id ? { ...c, title: updatedConvo.data.title } : c
+              ),
+            }))
+          }
         }
       },
 
@@ -476,79 +546,106 @@ export const useChatStore = create<ChatStore>()(
           }
         })
 
-        const result = await apiSendMessage(parseInt(activeConversation.id), newContent)
+        const tempAssistantId = `assistant-stream-${Date.now()}`
+        const tempAssistant: Message = {
+          id: tempAssistantId,
+          role: "assistant",
+          content: "",
+          status: "streaming" as const,
+          parentMessageId: updatedUserMessage.id,
+          timestamp: new Date(),
+        }
 
-        if (result.success) {
-          const sources = result.data.sources.map((sourceRef, idx) => ({
-            id: `source-${result.data.messageId}-${idx}`,
-            title: sourceRef.document_name,
-            content: sourceRef.chunk_text,
-            relevance: sourceRef.relevance_score,
-            type: "document" as const,
-            documentId: sourceRef.source_id.toString(),
-            folderPath: sourceRef.folder_path || undefined,
-          }))
-
-          const assistantMessage: Message = {
-            id: result.data.messageId,
-            role: "assistant",
-            content: result.data.assistantMessage,
-            sources,
-            parentMessageId: updatedUserMessage.id,
-            timestamp: new Date(),
+        set((state) => {
+          const conversationMessages = [...messagesBefore, updatedUserMessage, tempAssistant, ...messagesAfter]
+          const updatedConversation = state.activeConversation
+            ? { ...state.activeConversation, messages: conversationMessages, updatedAt: new Date() }
+            : null
+          return {
+            activeConversation: updatedConversation,
+            conversations: updatedConversation
+              ? state.conversations.map((c) => (c.id === updatedConversation.id ? updatedConversation : c))
+              : state.conversations,
           }
+        })
 
-          set((state) => {
-            const conversationMessages = [
-              ...messagesBefore,
-              updatedUserMessage,
-              assistantMessage,
-              ...messagesAfter,
-            ]
-            const updatedConversation = state.activeConversation
-              ? {
-                  ...state.activeConversation,
-                  messages: conversationMessages,
-                  updatedAt: new Date(),
-                }
-              : null
+        activeStreamController?.abort()
+        activeStreamController = new AbortController()
 
-            const allSources = conversationMessages.flatMap((msg) => msg.sources || [])
-
-            return {
-              activeConversation: updatedConversation,
-              conversations: updatedConversation
-                ? state.conversations.map((c) =>
-                    c.id === updatedConversation.id ? updatedConversation : c
+        let completed = false
+        await apiSendMessageStream(
+          parseInt(activeConversation.id),
+          newContent,
+          {
+            onChunk: (delta) => {
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId ? { ...msg, content: msg.content + delta } : msg
                   )
-                : state.conversations,
-              selectedSources: allSources,
-              isWaitingForResponse: false,
-              waitingConversationId: null,
-            }
-          })
-        } else {
-          // Revert optimistic update if request failed
-          set((state) => {
-            const revertedConversation = state.activeConversation
-              ? {
-                  ...state.activeConversation,
-                  messages: originalMessages,
+                return {
+                  activeConversation: state.activeConversation
+                    ? { ...state.activeConversation, messages: patchMessages(state.activeConversation.messages) }
+                    : null,
+                  conversations: state.conversations.map((c) =>
+                    c.id === activeConversation.id ? { ...c, messages: patchMessages(c.messages) } : c
+                  ),
                 }
-              : null
-
-            return {
-              activeConversation: revertedConversation,
-              conversations: revertedConversation
-                ? state.conversations.map((c) =>
-                    c.id === revertedConversation.id ? revertedConversation : c
+              })
+            },
+            onComplete: (event) => {
+              completed = true
+              const messageId = event.message_id.toString()
+              const sources = mapSources(event.sources, messageId)
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId
+                      ? { ...msg, id: messageId, status: "completed" as const, sources, timestamp: new Date(event.created_at) }
+                      : msg
                   )
-                : state.conversations,
-              isWaitingForResponse: false,
-              waitingConversationId: null,
-            }
-          })
-          toast.error(`Failed to regenerate message: ${result.error}`)
+                const updatedConversation = state.activeConversation
+                  ? { ...state.activeConversation, messages: patchMessages(state.activeConversation.messages), updatedAt: new Date() }
+                  : null
+                const allSources = (updatedConversation?.messages || []).flatMap((msg) => msg.sources || [])
+                return {
+                  activeConversation: updatedConversation,
+                  conversations: updatedConversation
+                    ? state.conversations.map((c) => (c.id === updatedConversation.id ? updatedConversation : c))
+                    : state.conversations,
+                  selectedSources: allSources,
+                  isWaitingForResponse: false,
+                  waitingConversationId: null,
+                }
+              })
+            },
+            onError: (error) => {
+              const isCancelled = error.code === "ABORT"
+              if (!isCancelled) {
+                set((state) => {
+                  const revertedConversation = state.activeConversation
+                    ? { ...state.activeConversation, messages: originalMessages }
+                    : null
+                  return {
+                    activeConversation: revertedConversation,
+                    conversations: revertedConversation
+                      ? state.conversations.map((c) => (c.id === revertedConversation.id ? revertedConversation : c))
+                      : state.conversations,
+                    isWaitingForResponse: false,
+                    waitingConversationId: null,
+                  }
+                })
+                toast.error(`Failed to regenerate message: ${error.message}`)
+                return
+              }
+              set({ isWaitingForResponse: false, waitingConversationId: null })
+            },
+          },
+          activeStreamController.signal
+        )
+
+        if (!completed) {
+          set({ isWaitingForResponse: false, waitingConversationId: null })
         }
       },
     }),

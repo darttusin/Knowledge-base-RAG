@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Button } from "@/components/ui/button"
@@ -50,6 +50,12 @@ export function AssistantMessageBubble({
       onRegenerate()
     }
   }
+
+  const safeStreamingContent = useMemo(() => {
+    const fenceCount = (message.content.match(/```/g) || []).length
+    const needsFenceClose = message.status === "streaming" && fenceCount % 2 === 1
+    return needsFenceClose ? `${message.content}\n\n\`\`\`` : message.content
+  }, [message.content, message.status])
 
   // Render markdown with custom code block and source link components
   const renderContent = () => {
@@ -105,7 +111,7 @@ export function AssistantMessageBubble({
     }
 
     // Replace [§N] and grouped citations like [§1, §2] with clickable links
-    const contentWithSourceLinks = normalizeMarkdown(message.content).replace(
+    const contentWithSourceLinks = normalizeMarkdown(safeStreamingContent).replace(
       /\[(§\d+(?:,\s*§\d+)*)\]/g,
       (match, citationGroup) => {
         const convertedCitations = citationGroup.split(/,\s*/).map((citation: string) => {

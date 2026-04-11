@@ -21,6 +21,9 @@ export function MessageList({ onSourceClick, onSuggestionClick }: MessageListPro
   const editMessage = useChatStore((s) => s.editMessage)
   const scrollRef = useRef<HTMLDivElement>(null)
   const messageGroups = useMessageGroups(conversation)
+  const hasStreamingAssistant = Boolean(
+    conversation?.messages?.some((msg) => msg.role === "assistant" && msg.status === "streaming")
+  )
 
   // Auto-scroll to bottom when messages change or while waiting for response
   useEffect(() => {
@@ -28,9 +31,14 @@ export function MessageList({ onSourceClick, onSuggestionClick }: MessageListPro
       if (scrollRef.current) {
         const scrollArea = scrollRef.current.querySelector("[data-radix-scroll-area-viewport]")
         if (scrollArea) {
+          const distanceToBottom = scrollArea.scrollHeight - scrollArea.scrollTop - scrollArea.clientHeight
+          const shouldPinToBottom = isWaitingForResponse || distanceToBottom < 120
+          if (!shouldPinToBottom) {
+            return
+          }
           scrollArea.scrollTo({
             top: scrollArea.scrollHeight,
-            behavior: "smooth",
+            behavior: isWaitingForResponse ? "auto" : "smooth",
           })
         }
       }
@@ -63,7 +71,7 @@ export function MessageList({ onSourceClick, onSuggestionClick }: MessageListPro
                 onEditMessage={editMessage}
               />
             ))}
-            {isWaitingForResponse && (
+            {isWaitingForResponse && !hasStreamingAssistant && (
               <div className="flex gap-2 sm:gap-4">
                 <div className="from-primary to-primary/80 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br sm:h-8 sm:w-8">
                   <Loader2 className="text-primary-foreground h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4" />

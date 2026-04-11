@@ -2,15 +2,15 @@
 
 import type React from "react"
 import { useState } from "react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { ParagraphRenderer } from "@/components/paragraph-renderer"
 import { SourceBadge } from "./source-badge"
 import { CodeBlock } from "@/components/code-block"
 import { useCopyFeedback } from "@/hooks/useCopyFeedback"
 import { Bot, Copy, Check, ThumbsUp, ThumbsDown, RefreshCw } from "lucide-react"
 import type { Message, Source } from "@/lib/types"
-import { CODE_BLOCK_REGEX } from "@/lib/syntax-highlighting"
 import { cn } from "@/lib/utils"
 
 interface AssistantMessageBubbleProps {
@@ -28,36 +28,33 @@ export function AssistantMessageBubble({ message, onSourceClick }: AssistantMess
     setFeedback(feedback === type ? null : type)
   }
 
-  // Parse content for code blocks
+  // Render markdown with custom code block component
   const renderContent = () => {
-    const content = message.content
-    const regex = new RegExp(CODE_BLOCK_REGEX.source, "g")
-    const parts: React.ReactNode[] = []
-    let lastIndex = 0
-    let match
+    return (
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          code({ inline, className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || "")
+            const language = match ? match[1] : "javascript"
+            const codeString = String(children).replace(/\n$/, "")
 
-    while ((match = regex.exec(content)) !== null) {
-      // Add text before code block
-      if (match.index > lastIndex) {
-        const textBefore = content.slice(lastIndex, match.index)
-        parts.push(<ParagraphRenderer key={`text-${lastIndex}`} content={textBefore} />)
-      }
-
-      // Add code block
-      const language = match[1] || "javascript"
-      const code = match[2].trim()
-      parts.push(<CodeBlock key={`code-${match.index}`} code={code} language={language} />)
-
-      lastIndex = match.index + match[0].length
-    }
-
-    // Add remaining text after last code block
-    if (lastIndex < content.length) {
-      const remainingText = content.slice(lastIndex)
-      parts.push(<ParagraphRenderer key={`text-${lastIndex}`} content={remainingText} />)
-    }
-
-    return parts.length > 0 ? parts : <ParagraphRenderer content={content} />
+            return !inline ? (
+              <CodeBlock code={codeString} language={language} />
+            ) : (
+              <code
+                className="bg-muted text-foreground rounded px-1.5 py-0.5 text-sm font-mono before:content-none after:content-none"
+                {...props}
+              >
+                {children}
+              </code>
+            )
+          },
+        }}
+      >
+        {message.content}
+      </ReactMarkdown>
+    )
   }
 
   return (
@@ -66,7 +63,26 @@ export function AssistantMessageBubble({ message, onSourceClick }: AssistantMess
         <Bot className="text-primary-foreground h-3.5 w-3.5 sm:h-4 sm:w-4" />
       </div>
       <div className="min-w-0 flex-1 pt-0.5">
-        <div className="prose prose-sm text-foreground prose-p:leading-relaxed prose-p:my-2 prose-strong:text-foreground prose-strong:font-semibold max-w-none">
+        <div
+          className={cn(
+            "prose prose-sm dark:prose-invert max-w-none",
+            "prose-p:leading-relaxed prose-p:my-2 prose-p:text-foreground",
+            "prose-headings:font-semibold prose-headings:text-foreground",
+            "prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg",
+            "prose-strong:font-semibold prose-strong:text-foreground",
+            "prose-em:italic prose-em:text-foreground",
+            "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
+            "prose-code:bg-muted prose-code:text-foreground prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none",
+            "prose-pre:bg-transparent prose-pre:p-0 prose-pre:m-0",
+            "prose-blockquote:border-l-primary prose-blockquote:border-l-4 prose-blockquote:italic prose-blockquote:text-foreground/80",
+            "prose-ul:list-disc prose-ul:text-foreground prose-ol:list-decimal prose-ol:text-foreground",
+            "prose-li:text-foreground prose-li:my-1",
+            "prose-table:border prose-table:border-border",
+            "prose-th:bg-muted prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2",
+            "prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2",
+            "prose-hr:border-border"
+          )}
+        >
           {renderContent()}
         </div>
 

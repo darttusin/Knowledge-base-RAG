@@ -49,17 +49,21 @@ export function AssistantMessageBubble({ message, onSourceClick, onRegenerate }:
 
   // Render markdown with custom code block and source link components
   const renderContent = () => {
-    // Replace [§N] citations with clickable links
-    const contentWithSourceLinks = message.content.replace(
-      /\[§(\d+)\]/g,
-      (match, num) => {
+    // Replace [§N] and grouped citations like [§1, §2] with clickable links
+    const contentWithSourceLinks = message.content.replace(/\[(§\d+(?:,\s*§\d+)*)\]/g, (match, citationGroup) => {
+      const convertedCitations = citationGroup.split(/,\s*/).map((citation: string) => {
+        const num = citation.replace("§", "")
         const sourceIndex = parseInt(num) - 1
+
         if (message.sources && message.sources[sourceIndex]) {
           return `[§${num}](#source-${sourceIndex})`
         }
-        return match
-      }
-    )
+
+        return citation
+      })
+
+      return `[${convertedCitations.join(", ")}]`
+    })
 
     return (
       <ReactMarkdown

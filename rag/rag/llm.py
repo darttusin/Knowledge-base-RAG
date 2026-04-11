@@ -18,8 +18,9 @@ class ChatModel:
         api_key: str,
         temperature: float = 0.1,
         max_output_tokens: int = 1024,
+        timeout: float = 30.0,
     ) -> None:
-        self.client = OpenAI(base_url=api_url, api_key=api_key)
+        self.client = OpenAI(base_url=api_url, api_key=api_key, timeout=timeout)
         self.model_name = model_name
         self.temperature = temperature
         self.max_output_tokens = max_output_tokens

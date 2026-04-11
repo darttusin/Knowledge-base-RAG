@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI):
                 llm_model_generation=settings.RAG_LLM_MODEL,
                 llm_api_url=settings.RAG_LLM_API_URL,
                 llm_api_key=settings.RAG_LLM_API_KEY,
+                llm_timeout=settings.RAG_LLM_TIMEOUT,
                 top_k=settings.RAG_TOP_K,
                 chunk_size=settings.RAG_CHUNK_SIZE,
                 chunk_overlap=settings.RAG_CHUNK_OVERLAP,
@@ -44,11 +45,14 @@ async def lifespan(app: FastAPI):
             )
 
             # Initialize RAG service
-            classifier_path = Path(settings.OUTLIER_CLASSIFIER_PATH) if settings.OUTLIER_DETECTION_ENABLED else None
+            classifier_path = (
+                Path(settings.OUTLIER_CLASSIFIER_PATH)
+                if settings.OUTLIER_DETECTION_ENABLED
+                else None
+            )
             init_rag_service(
                 rag_settings=rag_settings,
                 classifier_path=classifier_path,
-                enable_outlier_detection=settings.OUTLIER_DETECTION_ENABLED,
             )
             logger.info("✓ RAG service initialized")
         except Exception as e:
@@ -68,9 +72,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    docs_url="/api/docs",
-    title="Knowledge Base RAG Backend API",
-    lifespan=lifespan
+    docs_url="/api/docs", title="Knowledge Base RAG Backend API", lifespan=lifespan
 )
 
 # Configure CORS

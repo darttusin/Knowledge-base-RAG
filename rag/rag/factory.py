@@ -21,6 +21,7 @@ def create_chat_model(settings: Settings) -> ChatModel:
         model_name=settings.llm_model_generation,
         api_url=settings.llm_api_url,
         api_key=settings.llm_api_key,
+        timeout=settings.llm_timeout,
     )
 
 
@@ -29,4 +30,5 @@ def create_judge_model(settings: Settings) -> ChatModel:
         model_name=settings.llm_model_judge,
         api_url=settings.judge_api_url or settings.llm_api_url,
         api_key=settings.judge_api_key or settings.llm_api_key,
+        timeout=settings.judge_timeout,
     )

@@ -46,7 +46,7 @@ async def send_message(
         # Answer question using local RAG
         rag_response = rag_service.answer_question(
             question=data.message,
-            strategy="rerank",  # Use rerank for balance between speed and quality
+            strategy="query_transform",  # Full RAG with query rewriting + HyDE
             check_topic=settings.OUTLIER_DETECTION_ENABLED,
             reject_off_topic=settings.OUTLIER_REJECT_OFF_TOPIC,
         )

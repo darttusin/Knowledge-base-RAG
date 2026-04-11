@@ -8,7 +8,7 @@ import { getAuthHeader } from "@/lib/auth/token"
 // ============================================
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api"
-const DEFAULT_TIMEOUT = 30000
+const DEFAULT_TIMEOUT = 600000 // 10 minutes for RAG requests
 
 export interface RequestConfig extends RequestInit {
   timeout?: number

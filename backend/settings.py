@@ -1,4 +1,3 @@
-from pathlib import Path
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -33,6 +32,7 @@ class Settings(BaseSettings):
     RAG_LLM_MODEL: str = "TechxGenus/c4ai-command-r-v01-AWQ"
     RAG_LLM_API_URL: str = ""
     RAG_LLM_API_KEY: str = ""
+    RAG_LLM_TIMEOUT: float = 30.0
     RAG_TOP_K: int = 5
     RAG_CHUNK_SIZE: int = 1000
     RAG_CHUNK_OVERLAP: int = 200
@@ -41,8 +41,10 @@ class Settings(BaseSettings):
 
     # Outlier Detection Settings
     OUTLIER_DETECTION_ENABLED: bool = True
-    OUTLIER_CLASSIFIER_PATH: str = "./models/pytorch_classifier.joblib"
-    OUTLIER_REJECT_OFF_TOPIC: bool = False  # Set to True to auto-reject off-topic questions
+    OUTLIER_CLASSIFIER_PATH: str = "./models/pytorch_topic_classifier.joblib"
+    OUTLIER_REJECT_OFF_TOPIC: bool = (
+        True  # Set to True to auto-reject off-topic questions
+    )
 
     # Code Executor Settings
     CODE_EXECUTOR_URL: str = "http://localhost:8002/execute"

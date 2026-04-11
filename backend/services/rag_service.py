@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from loguru import logger
+from outlier_detection import TopicClassifier
 from rag import (
     ChatModel,
     answer,
@@ -18,7 +19,6 @@ from rag import (
 from rag.models import RetrievedChunk
 from rag.retriever import retrieve, retrieve_with_query_transform, retrieve_with_rerank
 from rag.vectorstore import create_collection
-from outlier_detection import TopicClassifier
 
 
 @dataclass
@@ -38,17 +38,14 @@ class RagService:
         self,
         rag_settings: RagSettings,
         classifier_path: Optional[Path] = None,
-        enable_outlier_detection: bool = True,
     ):
         """Initialize RAG service.
 
         Args:
             rag_settings: RAG configuration settings
             classifier_path: Path to saved topic classifier model
-            enable_outlier_detection: Whether to use outlier detection
         """
         self.settings = rag_settings
-        self.enable_outlier_detection = enable_outlier_detection
 
         # Initialize models
         self.chat_model: Optional[ChatModel] = None
@@ -83,16 +80,8 @@ class RagService:
         )
         logger.info(f"✓ Loaded ChromaDB collection: {self.settings.chroma_collection}")
 
-        # Load topic classifier if available
-        if (
-            self.enable_outlier_detection
-            and classifier_path
-            and classifier_path.exists()
-        ):
-            self.topic_classifier = TopicClassifier.load(classifier_path)
-            logger.info(f"✓ Loaded topic classifier from: {classifier_path}")
-        elif self.enable_outlier_detection:
-            logger.warning("⚠ Outlier detection enabled but no classifier found")
+        self.topic_classifier = TopicClassifier.load(classifier_path)
+        logger.info(f"✓ Loaded topic classifier from: {classifier_path}")
 
     def check_topic(self, question: str) -> tuple[bool, float]:
         """Check if question is on-topic.
@@ -228,14 +217,12 @@ def get_rag_service() -> RagService:
 def init_rag_service(
     rag_settings: RagSettings,
     classifier_path: Optional[Path] = None,
-    enable_outlier_detection: bool = True,
 ) -> RagService:
     """Initialize global RAG service.
 
     Args:
         rag_settings: RAG configuration
         classifier_path: Path to topic classifier model
-        enable_outlier_detection: Whether to enable outlier detection
 
     Returns:
         Initialized RagService
@@ -244,7 +231,6 @@ def init_rag_service(
     _rag_service = RagService(
         rag_settings=rag_settings,
         classifier_path=classifier_path,
-        enable_outlier_detection=enable_outlier_detection,
     )
     return _rag_service
 

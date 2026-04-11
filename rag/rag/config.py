@@ -30,10 +30,12 @@ class Settings(BaseSettings):
     llm_model_generation: str = "TechxGenus/c4ai-command-r-v01-AWQ"
     llm_api_url: str = ""
     llm_api_key: str = ""
+    llm_timeout: float = 30.0
 
     llm_model_judge: str = "Qwen/Qwen2.5-32B-Instruct-AWQ"
     judge_api_url: str = ""
     judge_api_key: str = ""
+    judge_timeout: float = 30.0
 
     dataset_path: str = "./data/dataset"
     qa_dataset_path: str = "./data/stackoverflow-pytorch.csv"

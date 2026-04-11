@@ -97,6 +97,17 @@ async function handleResponse<T>(response: Response): Promise<T> {
       }
     }
 
+    // Handle 401 Unauthorized - clear auth and redirect to login
+    if (response.status === 401) {
+      if (typeof window !== "undefined") {
+        const { clearAuthData } = await import("@/lib/auth/token")
+        clearAuthData()
+
+        // Redirect to login page
+        window.location.href = "/login"
+      }
+    }
+
     throw new ApiRequestError(errorMessage, errorCode, response.status)
   }
 
@@ -125,9 +136,9 @@ async function request<T>(endpoint: string, config: RequestConfig = {}): Promise
   const timeoutId = setTimeout(() => controller.abort(), timeout)
 
   // Build headers with authentication
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...fetchConfig.headers,
+    ...(fetchConfig.headers as Record<string, string>),
   }
 
   // Add JWT token if available
@@ -247,7 +258,7 @@ export async function streamRequest<T>(
   const url = buildUrl(endpoint)
 
   // Build headers with authentication
-  const headers: HeadersInit = { "Content-Type": "application/json" }
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
   const authHeader = getAuthHeader()
   if (authHeader) {
     headers["Authorization"] = authHeader
@@ -261,6 +272,13 @@ export async function streamRequest<T>(
     })
 
     if (!response.ok) {
+      // Handle 401 Unauthorized - clear auth and redirect to login
+      if (response.status === 401 && typeof window !== "undefined") {
+        const { clearAuthData } = await import("@/lib/auth/token")
+        clearAuthData()
+        window.location.href = "/login"
+      }
+
       throw new ApiRequestError(
         `HTTP ${response.status}`,
         `HTTP_${response.status}`,
@@ -339,7 +357,7 @@ export async function uploadFile<T>(
       }
     })
 
-    xhr.addEventListener("load", () => {
+    xhr.addEventListener("load", async () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           resolve(JSON.parse(xhr.responseText))
@@ -347,6 +365,13 @@ export async function uploadFile<T>(
           reject(new ApiRequestError("Invalid response", "PARSE_ERROR"))
         }
       } else {
+        // Handle 401 Unauthorized - clear auth and redirect to login
+        if (xhr.status === 401 && typeof window !== "undefined") {
+          const { clearAuthData } = await import("@/lib/auth/token")
+          clearAuthData()
+          window.location.href = "/login"
+        }
+
         reject(new ApiRequestError(`HTTP ${xhr.status}`, `HTTP_${xhr.status}`, xhr.status))
       }
     })

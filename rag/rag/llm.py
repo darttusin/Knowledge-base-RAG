@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 
 from openai import OpenAI
 
@@ -60,3 +61,28 @@ class ChatModel:
         )
         raw = response.choices[0].message.content
         return _clean_response(raw)
+
+    def stream(
+        self,
+        messages: list[dict],
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> Iterator[str]:
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=temperature if temperature is not None else self.temperature,
+            max_tokens=max_tokens if max_tokens is not None else self.max_output_tokens,
+            stream=True,
+        )
+
+        for chunk in response:
+            choices = getattr(chunk, "choices", None)
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            if not delta:
+                continue
+            content = getattr(delta, "content", None)
+            if content:
+                yield content

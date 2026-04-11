@@ -53,13 +53,56 @@ export function AssistantMessageBubble({
 
   // Render markdown with custom code block and source link components
   const renderContent = () => {
-    const normalizeMarkdown = (content: string) =>
-      content
-        .replace(/\r\n/g, "\n")
-        // Convert patterns like "2. - item" into a nested list start.
-        .replace(/(^|\n)(\d+\.)\s+-\s+/g, "$1$2\n- ")
-        // Ensure standalone bullet markers begin after a blank line for markdown parsers.
-        .replace(/([^\n])\n([*-]\s+)/g, "$1\n\n$2")
+    const normalizeMarkdown = (content: string) => {
+      const normalized = content.replace(/\r\n/g, "\n")
+      const lines = normalized.split("\n")
+      const result: string[] = []
+
+      let inColonSection = false
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim()
+
+        if (!line) {
+          result.push("")
+          inColonSection = false
+          continue
+        }
+
+        // Convert malformed patterns like "2. - item" into valid markdown list structure.
+        const malformedListMatch = line.match(/^(\d+)\.\s+-\s+(.+)$/)
+        if (malformedListMatch) {
+          const [, index, text] = malformedListMatch
+          result.push(`${index}.`)
+          result.push(`- ${text}`)
+          inColonSection = false
+          continue
+        }
+
+        // Preserve normal markdown list items and headings/sections.
+        if (/^([*-]|\d+\.)\s+/.test(line)) {
+          result.push(line)
+          inColonSection = false
+          continue
+        }
+
+        // If section line ends with ":", then subsequent plain lines become bullet points.
+        if (line.endsWith(":")) {
+          result.push(line)
+          inColonSection = true
+          continue
+        }
+
+        if (inColonSection) {
+          result.push(`- ${line}`)
+          continue
+        }
+
+        result.push(line)
+      }
+
+      return result.join("\n")
+    }
 
     // Replace [§N] and grouped citations like [§1, §2] with clickable links
     const contentWithSourceLinks = normalizeMarkdown(message.content).replace(
@@ -161,8 +204,8 @@ export function AssistantMessageBubble({
             "prose-code:bg-muted prose-code:text-foreground prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none",
             "prose-pre:bg-transparent prose-pre:p-0 prose-pre:m-0",
             "prose-blockquote:border-l-primary prose-blockquote:border-l-4 prose-blockquote:italic prose-blockquote:text-foreground/80",
-            "prose-ul:list-disc prose-ul:text-foreground prose-ol:list-decimal prose-ol:text-foreground",
-            "prose-li:text-foreground prose-li:my-1",
+            "prose-ul:list-disc prose-ul:list-inside prose-ul:text-foreground prose-ol:list-decimal prose-ol:list-inside prose-ol:text-foreground",
+            "prose-li:text-foreground prose-li:my-1 prose-li:marker:text-foreground",
             "prose-table:border prose-table:border-border",
             "prose-th:bg-muted prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2",
             "prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2",

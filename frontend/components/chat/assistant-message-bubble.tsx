@@ -21,7 +21,11 @@ interface AssistantMessageBubbleProps {
   onRegenerate?: () => void
 }
 
-export function AssistantMessageBubble({ message, onSourceClick, onRegenerate }: AssistantMessageBubbleProps) {
+export function AssistantMessageBubble({
+  message,
+  onSourceClick,
+  onRegenerate,
+}: AssistantMessageBubbleProps) {
   const [feedback, setFeedback] = useState<"like" | "dislike" | null>(message.feedback || null)
   const { copied, copy } = useCopyFeedback()
 
@@ -49,21 +53,32 @@ export function AssistantMessageBubble({ message, onSourceClick, onRegenerate }:
 
   // Render markdown with custom code block and source link components
   const renderContent = () => {
+    const normalizeMarkdown = (content: string) =>
+      content
+        .replace(/\r\n/g, "\n")
+        // Convert patterns like "2. - item" into a nested list start.
+        .replace(/(^|\n)(\d+\.)\s+-\s+/g, "$1$2\n- ")
+        // Ensure standalone bullet markers begin after a blank line for markdown parsers.
+        .replace(/([^\n])\n([*-]\s+)/g, "$1\n\n$2")
+
     // Replace [§N] and grouped citations like [§1, §2] with clickable links
-    const contentWithSourceLinks = message.content.replace(/\[(§\d+(?:,\s*§\d+)*)\]/g, (match, citationGroup) => {
-      const convertedCitations = citationGroup.split(/,\s*/).map((citation: string) => {
-        const num = citation.replace("§", "")
-        const sourceIndex = parseInt(num) - 1
+    const contentWithSourceLinks = normalizeMarkdown(message.content).replace(
+      /\[(§\d+(?:,\s*§\d+)*)\]/g,
+      (match, citationGroup) => {
+        const convertedCitations = citationGroup.split(/,\s*/).map((citation: string) => {
+          const num = citation.replace("§", "")
+          const sourceIndex = parseInt(num) - 1
 
-        if (message.sources && message.sources[sourceIndex]) {
-          return `[§${num}](#source-${sourceIndex})`
-        }
+          if (message.sources && message.sources[sourceIndex]) {
+            return `[§${num}](#source-${sourceIndex})`
+          }
 
-        return citation
-      })
+          return citation
+        })
 
-      return `[${convertedCitations.join(", ")}]`
-    })
+        return `[${convertedCitations.join(", ")}]`
+      }
+    )
 
     return (
       <ReactMarkdown
@@ -79,7 +94,7 @@ export function AssistantMessageBubble({ message, onSourceClick, onRegenerate }:
               <CodeBlock code={codeString} language={language} />
             ) : (
               <code
-                className="bg-muted text-foreground rounded px-1.5 py-0.5 text-sm font-mono before:content-none after:content-none"
+                className="bg-muted text-foreground rounded px-1.5 py-0.5 font-mono text-sm before:content-none after:content-none"
                 {...props}
               >
                 {children}
@@ -151,7 +166,8 @@ export function AssistantMessageBubble({ message, onSourceClick, onRegenerate }:
             "prose-table:border prose-table:border-border",
             "prose-th:bg-muted prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2",
             "prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2",
-            "prose-hr:border-border"
+            "prose-hr:border-border",
+            "[&_p]:whitespace-pre-wrap"
           )}
         >
           {renderContent()}

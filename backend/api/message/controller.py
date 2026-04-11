@@ -226,8 +226,14 @@ async def send_message(
     sources_json = [src.model_dump() for src in source_references]
     new_message.sources = json.dumps(sources_json) if sources_json else None
 
-    # Generate dialogue title if this is first message
-    if is_first_message and dialogue.name == "New conversation":
+    # Generate dialogue title if this is first message and title is still default/empty
+    normalized_dialogue_name = (dialogue.name or "").strip().lower()
+    should_generate_title = (
+        is_first_message
+        and normalized_dialogue_name in {"", "new conversation"}
+    )
+
+    if should_generate_title:
         from api.dialogue.controller import generate_dialogue_title
         try:
             new_title = generate_dialogue_title(data.message, rag_service)

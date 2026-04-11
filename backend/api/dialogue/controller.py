@@ -52,6 +52,11 @@ Output ONLY the title, nothing else.
 Question: {question}
 Title:"""
 
+    def _fallback_title() -> str:
+        # Keep deterministic fallback but avoid trailing ellipsis in UI title.
+        words = question.split()[:6]
+        return " ".join(words) if words else "New conversation"
+
     try:
         # Use chat model directly for title generation
         response = rag_service.chat_model.invoke(
@@ -59,22 +64,17 @@ Title:"""
         )
         title = response.strip().strip("\"'")
 
-        # Fallback if title is too long or empty
-        if not title or len(title) > 100:
-            # Extract first few words from question
-            words = question.split()[:5]
-            title = " ".join(words)
-            if len(question.split()) > 5:
-                title += "..."
+        if not title:
+            return _fallback_title()
+
+        # Enforce concise title shape without dropping to query fallback.
+        words = title.split()
+        if len(words) > 6:
+            title = " ".join(words[:6])
 
         return title
     except Exception:
-        # Fallback on error
-        words = question.split()[:5]
-        title = " ".join(words)
-        if len(question.split()) > 5:
-            title += "..."
-        return title
+        return _fallback_title()
 
 
 async def create_dialogue(

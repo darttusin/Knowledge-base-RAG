@@ -3,6 +3,64 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from httpx import AsyncClient
 
+from api.message_citation_utils import remap_response_citations
+from dataclasses import dataclass
+
+
+@dataclass
+class DummySourceReference:
+    source_id: int
+    document_name: str = ""
+    chunk_text: str = ""
+    relevance_score: float = 0.0
+    folder_path: str | None = None
+
+
+
+def test_remap_response_citations_maps_deduplicated_source_indexes():
+    response = "Ответ с групповыми ссылками [§1, §5] и [§3]."
+    chunks_by_source = {
+        101: [(1, 0.9, "chunk 1"), (5, 0.6, "chunk 5")],
+        202: [(3, 0.8, "chunk 3")],
+    }
+    source_references = [
+        DummySourceReference(
+            source_id=101,
+            document_name="doc-a.md",
+            chunk_text="chunk 1",
+            relevance_score=0.95,
+            folder_path=None,
+        ),
+        DummySourceReference(
+            source_id=202,
+            document_name="doc-b.md",
+            chunk_text="chunk 3",
+            relevance_score=0.80,
+            folder_path=None,
+        ),
+    ]
+
+    remapped = remap_response_citations(response, chunks_by_source, source_references)
+
+    assert remapped == "Ответ с групповыми ссылками [§1, §1] и [§2]."
+
+
+def test_remap_response_citations_keeps_unknown_citations_unchanged():
+    response = "Ссылка [§9] не должна ломаться."
+    chunks_by_source = {101: [(1, 0.9, "chunk 1")]}
+    source_references = [
+        DummySourceReference(
+            source_id=101,
+            document_name="doc-a.md",
+            chunk_text="chunk 1",
+            relevance_score=0.95,
+            folder_path=None,
+        )
+    ]
+
+    remapped = remap_response_citations(response, chunks_by_source, source_references)
+
+    assert remapped == response
 
 @pytest.mark.asyncio
 async def test_send_message_success(client: AsyncClient, create_user):

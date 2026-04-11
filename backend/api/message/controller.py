@@ -8,6 +8,7 @@ from settings import settings
 from services.rag_service import get_rag_service
 
 from .code_parser import parse_and_execute_code
+from api.message_citation_utils import remap_response_citations
 from .models import CodeExecution, MessageFeedback, MessageResponse, SendMessage, SourceReference
 
 
@@ -54,6 +55,8 @@ async def find_source_by_path(path: str, user_id: int, db: AsyncSession) -> Sour
         )
     )
     return result.scalar_one_or_none()
+
+
 
 
 def calculate_smart_relevance(
@@ -199,6 +202,14 @@ async def send_message(
             source_references,
             key=lambda x: x.relevance_score,
             reverse=True
+        )
+
+        # Remap citations to deduplicated source indexes, so [§N] always points
+        # to an existing entry in `source_references` even after deduplication.
+        assistant_response = remap_response_citations(
+            assistant_response,
+            chunks_by_source,
+            source_references,
         )
 
     except RuntimeError as e:

@@ -65,12 +65,13 @@ export function AssistantMessageBubble({ message, onSourceClick, onRegenerate }:
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          code({ inline, className, children, ...props }) {
+          code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || "")
             const language = match ? match[1] : "javascript"
             const codeString = String(children).replace(/\n$/, "")
+            const isBlockCode = Boolean(match) || codeString.includes("\n")
 
-            return !inline ? (
+            return isBlockCode ? (
               <CodeBlock code={codeString} language={language} />
             ) : (
               <code

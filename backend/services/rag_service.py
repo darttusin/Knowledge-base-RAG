@@ -18,14 +18,7 @@ from rag import (
 from rag.models import RetrievedChunk
 from rag.retriever import retrieve, retrieve_with_query_transform, retrieve_with_rerank
 from rag.vectorstore import create_collection
-
-try:
-    from topic_classifier import TopicClassifier
-
-    OUTLIER_DETECTION_AVAILABLE = True
-except ImportError:
-    OUTLIER_DETECTION_AVAILABLE = False
-    TopicClassifier = None
+from outlier_detection import TopicClassifier
 
 
 @dataclass
@@ -55,9 +48,7 @@ class RagService:
             enable_outlier_detection: Whether to use outlier detection
         """
         self.settings = rag_settings
-        self.enable_outlier_detection = (
-            enable_outlier_detection and OUTLIER_DETECTION_AVAILABLE
-        )
+        self.enable_outlier_detection = enable_outlier_detection
 
         # Initialize models
         self.chat_model: Optional[ChatModel] = None

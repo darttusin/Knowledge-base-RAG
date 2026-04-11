@@ -7,16 +7,17 @@ dependencies = []
 [tool.uv.workspace]
 members = [
     "torch-parser",
-    "api",
     "tgbot",
     "backend",
     "code-executor",
     "rag",
-    "outlier-detection",
+    "outlier_detection",
 ]
 
 [tool.uv.sources]
 torch-parser = { workspace = true }
+rag = { workspace = true }
+outlier_detection = { workspace = true }
 
 [tool.ruff.lint]
 select = ["F", "E", "W", "C90", "I", "S", "BLE", "T20", "ARG", "ERA", "PLR0913"]

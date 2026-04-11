@@ -16,12 +16,8 @@ dependencies = [
     "langchain-core>=1.2.28",
     "loguru>=0.7.0",
     "rag",
-    "outlier-detection",
+    "outlier_detection",
 ]
-
-[tool.uv.sources]
-rag = { path = "../rag", editable = true }
-outlier-detection = { path = "../outlier-detection", editable = true }
 
 [dependency-groups]
 dev = [
@@ -49,3 +45,7 @@ max-args = 7
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "ARG", "S105"]
 "settings.py" = ["S105"]
+
+[tool.uv.sources]
+rag = { workspace = true }
+outlier_detection = { workspace = true }

@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+from collections.abc import Iterable
 
 from loguru import logger
 from outlier_detection import TopicClassifier
@@ -13,6 +14,7 @@ from rag import (
     create_embed_model,
     create_reranker,
 )
+from rag.chains import answer_stream
 from rag import (
     Settings as RagSettings,
 )
@@ -26,6 +28,16 @@ class RagResponse:
     """Response from RAG system."""
 
     answer: str
+    chunks: list[RetrievedChunk]
+    is_on_topic: bool = True
+    topic_confidence: float = 1.0
+
+
+@dataclass
+class RagStreamResponse:
+    """Streaming response from RAG system."""
+
+    stream: Iterable[str]
     chunks: list[RetrievedChunk]
     is_on_topic: bool = True
     topic_confidence: float = 1.0
@@ -190,6 +202,43 @@ class RagService:
 
         return RagResponse(
             answer=answer_text,
+            chunks=chunks,
+            is_on_topic=is_on_topic,
+            topic_confidence=topic_confidence,
+        )
+
+    def answer_question_stream(
+        self,
+        question: str,
+        strategy: str = "rerank",
+        check_topic: bool = True,
+        reject_off_topic: bool = False,
+    ) -> RagStreamResponse:
+        """Answer question using RAG with token streaming."""
+        is_on_topic = True
+        topic_confidence = 1.0
+
+        if check_topic and self.topic_classifier:
+            is_on_topic, topic_confidence = self.check_topic(question)
+
+            if not is_on_topic and reject_off_topic:
+                return RagStreamResponse(
+                    stream=iter(
+                        [
+                            "I can only answer questions about PyTorch. "
+                            "Your question appears to be off-topic."
+                        ]
+                    ),
+                    chunks=[],
+                    is_on_topic=False,
+                    topic_confidence=topic_confidence,
+                )
+
+        chunks = self.retrieve_chunks(question, strategy=strategy)
+        stream = answer_stream(self.chat_model, question, chunks)
+
+        return RagStreamResponse(
+            stream=stream,
             chunks=chunks,
             is_on_topic=is_on_topic,
             topic_confidence=topic_confidence,

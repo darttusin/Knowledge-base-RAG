@@ -54,11 +54,10 @@ Title:"""
 
     try:
         # Use chat model directly for title generation
-        response = rag_service.chat_model.chat(
+        response = rag_service.chat_model.invoke(
             [{"role": "user", "content": prompt}], max_tokens=20, temperature=0.7
         )
-        title = response.strip()
-        print("dialog title", title)
+        title = response.strip().strip("\"'")
 
         # Fallback if title is too long or empty
         if not title or len(title) > 100:

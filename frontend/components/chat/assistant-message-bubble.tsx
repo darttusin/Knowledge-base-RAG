@@ -21,7 +21,11 @@ interface AssistantMessageBubbleProps {
   onRegenerate?: () => void
 }
 
-export function AssistantMessageBubble({ message, onSourceClick, onRegenerate }: AssistantMessageBubbleProps) {
+export function AssistantMessageBubble({
+  message,
+  onSourceClick,
+  onRegenerate,
+}: AssistantMessageBubbleProps) {
   const [feedback, setFeedback] = useState<"like" | "dislike" | null>(message.feedback || null)
   const { copied, copy } = useCopyFeedback()
 
@@ -49,21 +53,75 @@ export function AssistantMessageBubble({ message, onSourceClick, onRegenerate }:
 
   // Render markdown with custom code block and source link components
   const renderContent = () => {
-    // Replace [§N] and grouped citations like [§1, §2] with clickable links
-    const contentWithSourceLinks = message.content.replace(/\[(§\d+(?:,\s*§\d+)*)\]/g, (match, citationGroup) => {
-      const convertedCitations = citationGroup.split(/,\s*/).map((citation: string) => {
-        const num = citation.replace("§", "")
-        const sourceIndex = parseInt(num) - 1
+    const normalizeMarkdown = (content: string) => {
+      const normalized = content.replace(/\r\n/g, "\n")
+      const lines = normalized.split("\n")
+      const result: string[] = []
 
-        if (message.sources && message.sources[sourceIndex]) {
-          return `[§${num}](#source-${sourceIndex})`
+      let inColonSection = false
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim()
+
+        if (!line) {
+          result.push("")
+          inColonSection = false
+          continue
         }
 
-        return citation
-      })
+        // Convert malformed patterns like "2. - item" into valid markdown list structure.
+        const malformedListMatch = line.match(/^(\d+)\.\s+-\s+(.+)$/)
+        if (malformedListMatch) {
+          const [, index, text] = malformedListMatch
+          result.push(`${index}.`)
+          result.push(`- ${text}`)
+          inColonSection = false
+          continue
+        }
 
-      return `[${convertedCitations.join(", ")}]`
-    })
+        // Preserve normal markdown list items and headings/sections.
+        if (/^([*-]|\d+\.)\s+/.test(line)) {
+          result.push(line)
+          inColonSection = false
+          continue
+        }
+
+        // If section line ends with ":", then subsequent plain lines become bullet points.
+        if (line.endsWith(":")) {
+          result.push(line)
+          inColonSection = true
+          continue
+        }
+
+        if (inColonSection) {
+          result.push(`- ${line}`)
+          continue
+        }
+
+        result.push(line)
+      }
+
+      return result.join("\n")
+    }
+
+    // Replace [§N] and grouped citations like [§1, §2] with clickable links
+    const contentWithSourceLinks = normalizeMarkdown(message.content).replace(
+      /\[(§\d+(?:,\s*§\d+)*)\]/g,
+      (match, citationGroup) => {
+        const convertedCitations = citationGroup.split(/,\s*/).map((citation: string) => {
+          const num = citation.replace("§", "")
+          const sourceIndex = parseInt(num) - 1
+
+          if (message.sources && message.sources[sourceIndex]) {
+            return `[§${num}](#source-${sourceIndex})`
+          }
+
+          return citation
+        })
+
+        return `[${convertedCitations.join(", ")}]`
+      }
+    )
 
     return (
       <ReactMarkdown
@@ -79,7 +137,7 @@ export function AssistantMessageBubble({ message, onSourceClick, onRegenerate }:
               <CodeBlock code={codeString} language={language} />
             ) : (
               <code
-                className="bg-muted text-foreground rounded px-1.5 py-0.5 text-sm font-mono before:content-none after:content-none"
+                className="bg-muted text-foreground rounded px-1.5 py-0.5 font-mono text-sm before:content-none after:content-none"
                 {...props}
               >
                 {children}
@@ -146,12 +204,13 @@ export function AssistantMessageBubble({ message, onSourceClick, onRegenerate }:
             "prose-code:bg-muted prose-code:text-foreground prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none",
             "prose-pre:bg-transparent prose-pre:p-0 prose-pre:m-0",
             "prose-blockquote:border-l-primary prose-blockquote:border-l-4 prose-blockquote:italic prose-blockquote:text-foreground/80",
-            "prose-ul:list-disc prose-ul:text-foreground prose-ol:list-decimal prose-ol:text-foreground",
-            "prose-li:text-foreground prose-li:my-1",
+            "prose-ul:list-disc prose-ul:list-inside prose-ul:text-foreground prose-ol:list-decimal prose-ol:list-inside prose-ol:text-foreground",
+            "prose-li:text-foreground prose-li:my-1 prose-li:marker:text-foreground",
             "prose-table:border prose-table:border-border",
             "prose-th:bg-muted prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2",
             "prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2",
-            "prose-hr:border-border"
+            "prose-hr:border-border",
+            "[&_p]:whitespace-pre-wrap"
           )}
         >
           {renderContent()}

@@ -11,6 +11,8 @@ members = [
     "tgbot",
     "backend",
     "code-executor",
+    "rag",
+    "outlier-detection",
 ]
 
 [tool.uv.sources]

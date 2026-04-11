@@ -1,3 +1,6 @@
+import re
+from collections.abc import Iterable
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,26 +56,78 @@ Question: {question}
 Title:"""
 
     def _fallback_title() -> str:
-        # Keep deterministic fallback but avoid trailing ellipsis in UI title.
         words = question.split()[:6]
         return " ".join(words) if words else "New conversation"
 
-    try:
-        # Use chat model directly for title generation
-        response = rag_service.chat_model.invoke(
-            [{"role": "user", "content": prompt}], max_tokens=20, temperature=0.7
+    def _extract_stream_content(chunk: object) -> tuple[str, bool]:
+        if isinstance(chunk, dict):
+            choices = chunk.get("choices", [])
+            if not choices:
+                return "", False
+            choice = choices[0] or {}
+            delta = choice.get("delta", {}) or {}
+            content = delta.get("content", "") or ""
+            return content, bool(choice.get("finish_reason"))
+
+        choices = getattr(chunk, "choices", None)
+        if not choices:
+            return "", False
+        choice = choices[0]
+        delta = getattr(choice, "delta", None)
+        content = getattr(delta, "content", "") if delta else ""
+        finish_reason = getattr(choice, "finish_reason", None)
+        return content or "", bool(finish_reason)
+
+    def _normalize_title(raw_title: str) -> str:
+        title = raw_title.strip()
+        title = re.sub(r"[\r\n]+", " ", title)
+        title = title.strip().strip("\"'`")
+        title = re.sub(
+            r"^(title|topic|summary|заголовок)\s*[:\-]\s*",
+            "",
+            title,
+            flags=re.IGNORECASE,
         )
-        title = response.strip().strip("\"'")
+        title = title.replace('"', "").replace("'", "").replace("`", "")
+        title = re.sub(r"\s+", " ", title).strip()
 
         if not title:
-            return _fallback_title()
+            return ""
 
-        # Enforce concise title shape without dropping to query fallback.
         words = title.split()
         if len(words) > 6:
-            title = " ".join(words[:6])
+            words = words[:6]
+        if len(words) < 3:
+            return ""
+        return " ".join(words)
 
-        return title
+    try:
+        messages = [{"role": "user", "content": prompt}]
+        chat_model = rag_service.chat_model
+
+        if hasattr(chat_model, "invoke_once"):
+            response = chat_model.invoke_once(
+                messages, max_tokens=16, temperature=0.2
+            )
+        else:
+            response = chat_model.invoke(messages, max_tokens=16, temperature=0.2)
+
+        if isinstance(response, str):
+            title = _normalize_title(response)
+            return title if title else _fallback_title()
+
+        if isinstance(response, Iterable):
+            chunks: list[str] = []
+            for chunk in response:
+                content, is_finished = _extract_stream_content(chunk)
+                if content:
+                    chunks.append(content)
+                if is_finished:
+                    break
+            title = _normalize_title("".join(chunks))
+            return title if title else _fallback_title()
+
+        return _fallback_title()
     except Exception:
         return _fallback_title()
 

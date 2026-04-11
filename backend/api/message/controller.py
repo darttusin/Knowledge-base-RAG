@@ -1,4 +1,3 @@
-import httpx
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,9 +8,6 @@ from services.rag_service import get_rag_service
 
 from .code_parser import parse_and_execute_code
 from .models import CodeExecution, MessageFeedback, MessageResponse, SendMessage
-
-# Fallback to external RAG API if local RAG is not available
-RAG_API_URL = "http://localhost:8000/forward"
 
 
 async def send_message(
@@ -36,40 +32,41 @@ async def send_message(
     db.add(new_message)
     await db.flush()
 
-    # Try to use local RAG service first
-    assistant_response = ""
-    sources = []
+    # Use local RAG service
+    if not settings.RAG_ENABLED:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RAG service is disabled. Enable RAG_ENABLED in settings.",
+        )
 
-    if settings.RAG_ENABLED:
-        try:
-            rag_service = get_rag_service()
+    try:
+        rag_service = get_rag_service()
 
-            # Answer question using local RAG
-            rag_response = rag_service.answer_question(
-                question=data.message,
-                strategy="rerank",  # Use rerank for balance between speed and quality
-                check_topic=settings.OUTLIER_DETECTION_ENABLED,
-                reject_off_topic=settings.OUTLIER_REJECT_OFF_TOPIC,
-            )
+        # Answer question using local RAG
+        rag_response = rag_service.answer_question(
+            question=data.message,
+            strategy="rerank",  # Use rerank for balance between speed and quality
+            check_topic=settings.OUTLIER_DETECTION_ENABLED,
+            reject_off_topic=settings.OUTLIER_REJECT_OFF_TOPIC,
+        )
 
-            assistant_response = rag_response.answer
+        assistant_response = rag_response.answer
+        sources = [chunk.source for chunk in rag_response.chunks]
 
-            # Extract sources from chunks
-            sources = [chunk.source for chunk in rag_response.chunks]
+    except RuntimeError as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"RAG service not initialized: {str(e)}",
+        )
 
-        except RuntimeError:
-            # RAG service not initialized, fallback to external API
-            print("⚠ RAG service not available, falling back to external API")
-            assistant_response, sources = await _call_external_rag_api(data.message, user_id)
-
-        except Exception as e:
-            # Any other error, log and fallback
-            print(f"⚠ RAG service error: {e}, falling back to external API")
-            assistant_response, sources = await _call_external_rag_api(data.message, user_id)
-
-    else:
-        # RAG disabled, use external API
-        assistant_response, sources = await _call_external_rag_api(data.message, user_id)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"RAG service error: {str(e)}",
+        )
 
     new_message.assistant_response = assistant_response
 
@@ -107,44 +104,6 @@ async def set_message_feedback(
     message.feedback = data.feedback.value
 
     await db.commit()
-
-
-async def _call_external_rag_api(message: str, user_id: int) -> tuple[str, list[str]]:
-    """Fallback to external RAG API.
-
-    Args:
-        message: User message
-        user_id: User ID
-
-    Returns:
-        Tuple of (assistant_response, sources)
-
-    Raises:
-        HTTPException: If external API fails
-    """
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            rag_response = await client.post(
-                RAG_API_URL, json={"text": message, "tg_user_id": user_id}
-            )
-            rag_response.raise_for_status()
-            rag_data = rag_response.json()
-
-            assistant_response = rag_data.get("response", "")
-            sources = extract_sources_from_response(assistant_response)
-
-            return assistant_response, sources
-
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"RAG API unavailable: {str(e)}",
-        )
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"RAG API error: {e.response.status_code}",
-        )
 
 
 def extract_sources_from_response(response: str) -> list[str]:

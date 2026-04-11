@@ -1,9 +1,10 @@
-import sys
-from pathlib import Path
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from loguru import logger
+from rag import Settings as RagSettings
 
 from api.dialogue import router as dialogue_router
 from api.folder import router as folder_router
@@ -11,25 +12,19 @@ from api.message import router as message_router
 from api.source import router as source_router
 from api.user import router as user_router
 from db import close_db, init_db
-from settings import settings
-
-# Add rag module to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root / "rag"))
-
-from rag import Settings as RagSettings
 from services.rag_service import init_rag_service, shutdown_rag_service
+from settings import settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup and shutdown."""
     # Startup
-    print("Starting Knowledge Base RAG Backend...")
+    logger.info("Starting Knowledge Base RAG Backend...")
 
     # Initialize database
     await init_db()
-    print("✓ Database initialized")
+    logger.info("✓ Database initialized")
 
     # Initialize RAG service if enabled
     if settings.RAG_ENABLED:
@@ -55,21 +50,21 @@ async def lifespan(app: FastAPI):
                 classifier_path=classifier_path,
                 enable_outlier_detection=settings.OUTLIER_DETECTION_ENABLED,
             )
-            print("✓ RAG service initialized")
+            logger.info("✓ RAG service initialized")
         except Exception as e:
-            print(f"⚠ Failed to initialize RAG service: {e}")
-            print("  Backend will fallback to external RAG API")
+            logger.warning(f"⚠ Failed to initialize RAG service: {e}")
+            logger.warning("  RAG will not be available")
 
-    print("✓ Backend started successfully")
+    logger.info("✓ Backend started successfully")
 
     yield
 
     # Shutdown
-    print("Shutting down Knowledge Base RAG Backend...")
+    logger.info("Shutting down Knowledge Base RAG Backend...")
     await close_db()
     if settings.RAG_ENABLED:
         shutdown_rag_service()
-    print("✓ Backend shutdown complete")
+    logger.info("✓ Backend shutdown complete")
 
 
 app = FastAPI(

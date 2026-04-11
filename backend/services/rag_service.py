@@ -1,16 +1,10 @@
 """RAG service for question answering with context retrieval."""
 
-import sys
-from pathlib import Path
-
-# Add parent directories to path for importing rag and outlier_detection modules
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root / "rag"))
-sys.path.insert(0, str(project_root / "outlier-detection"))
-
-from typing import Optional
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
 
+from loguru import logger
 from rag import (
     ChatModel,
     Settings as RagSettings,
@@ -19,12 +13,13 @@ from rag import (
     create_embed_model,
     create_reranker,
 )
-from rag.retriever import retrieve_with_query_transform, retrieve_with_rerank, retrieve
-from rag.vectorstore import create_collection
 from rag.models import RetrievedChunk
+from rag.retriever import retrieve, retrieve_with_query_transform, retrieve_with_rerank
+from rag.vectorstore import create_collection
 
 try:
     from topic_classifier import TopicClassifier
+
     OUTLIER_DETECTION_AVAILABLE = True
 except ImportError:
     OUTLIER_DETECTION_AVAILABLE = False
@@ -34,6 +29,7 @@ except ImportError:
 @dataclass
 class RagResponse:
     """Response from RAG system."""
+
     answer: str
     chunks: list[RetrievedChunk]
     is_on_topic: bool = True
@@ -57,7 +53,9 @@ class RagService:
             enable_outlier_detection: Whether to use outlier detection
         """
         self.settings = rag_settings
-        self.enable_outlier_detection = enable_outlier_detection and OUTLIER_DETECTION_AVAILABLE
+        self.enable_outlier_detection = (
+            enable_outlier_detection and OUTLIER_DETECTION_AVAILABLE
+        )
 
         # Initialize models
         self.chat_model: Optional[ChatModel] = None
@@ -71,33 +69,36 @@ class RagService:
 
     def _load_models(self, classifier_path: Optional[Path] = None):
         """Load all required models."""
-        print("Loading RAG models...")
+        logger.info("Loading RAG models...")
 
         # Create LLM model
         self.chat_model = create_chat_model(self.settings)
-        print(f"✓ Loaded chat model: {self.settings.llm_model_generation}")
+        logger.info(f"✓ Loaded chat model: {self.settings.llm_model_generation}")
 
         # Create embedding model
         self.embed_model = create_embed_model(self.settings)
-        print(f"✓ Loaded embedding model: {self.settings.embedding_model}")
+        logger.info(f"✓ Loaded embedding model: {self.settings.embedding_model}")
 
         # Create reranker
         self.reranker = create_reranker(self.settings)
-        print(f"✓ Loaded reranker: {self.settings.rerank_model}")
+        logger.info(f"✓ Loaded reranker: {self.settings.rerank_model}")
 
         # Create/load ChromaDB collection
         self.collection = create_collection(
-            self.settings.chroma_path,
-            self.settings.chroma_collection
+            self.settings.chroma_path, self.settings.chroma_collection
         )
-        print(f"✓ Loaded ChromaDB collection: {self.settings.chroma_collection}")
+        logger.info(f"✓ Loaded ChromaDB collection: {self.settings.chroma_collection}")
 
         # Load topic classifier if available
-        if self.enable_outlier_detection and classifier_path and classifier_path.exists():
+        if (
+            self.enable_outlier_detection
+            and classifier_path
+            and classifier_path.exists()
+        ):
             self.topic_classifier = TopicClassifier.load(classifier_path)
-            print(f"✓ Loaded topic classifier from: {classifier_path}")
+            logger.info(f"✓ Loaded topic classifier from: {classifier_path}")
         elif self.enable_outlier_detection:
-            print("⚠ Outlier detection enabled but no classifier found")
+            logger.warning("⚠ Outlier detection enabled but no classifier found")
 
     def check_topic(self, question: str) -> tuple[bool, float]:
         """Check if question is on-topic.
@@ -224,7 +225,9 @@ def get_rag_service() -> RagService:
         RuntimeError: If service not initialized
     """
     if _rag_service is None:
-        raise RuntimeError("RAG service not initialized. Call init_rag_service() first.")
+        raise RuntimeError(
+            "RAG service not initialized. Call init_rag_service() first."
+        )
     return _rag_service
 
 
@@ -258,4 +261,4 @@ def shutdown_rag_service():
     if _rag_service:
         # Cleanup if needed
         _rag_service = None
-        print("✓ RAG service shutdown")
+        logger.info("✓ RAG service shutdown")

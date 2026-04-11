@@ -1,17 +1,18 @@
 import math
-import httpx
 
 from fastapi import HTTPException, UploadFile, status
+from loguru import logger
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from db import Source, Folder
+from db import Folder, Source
+from services.rag_service import get_rag_service
+from settings import settings as app_settings
 
 from .models import SourceContent, SourceForList, SourcesList, SourceType
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
-RAG_API_URL = "http://localhost:8000"
 
 
 async def upload_source(
@@ -62,27 +63,42 @@ async def upload_source(
     await db.commit()
     await db.refresh(new_source)
 
-    # Вызываем API для эмбеддинга документа
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            embed_response = await client.post(
-                f"{RAG_API_URL}/embed/document",
-                json={
+    # Embed document using local RAG service
+    if app_settings.RAG_ENABLED:
+        try:
+            from rag.documents import Document, split_documents
+            from rag.vectorstore import index_chunks
+
+            rag_service = get_rag_service()
+
+            # Create document object
+            doc = Document(
+                page_content=content_str,
+                metadata={
+                    "source": filename,
                     "document_id": new_source.id,
-                    "document_name": new_source.name,
-                    "content": content_str,
                     "user_id": user_id,
-                    "chunk_size": 500,
-                    "overlap": 50
+                    "type": source_type.value,
                 }
             )
-            embed_response.raise_for_status()
-            # Можно логировать результат если нужно
-            # embed_data = embed_response.json()
-    except Exception as e:
-        # Если эмбеддинг не удался, логируем, но не падаем
-        # В продакшене можно добавить логирование
-        print(f"Warning: Failed to embed document {new_source.id}: {str(e)}")
+
+            # Split document into chunks
+            chunks = split_documents(
+                [doc],
+                chunk_size=app_settings.RAG_CHUNK_SIZE,
+                chunk_overlap=app_settings.RAG_CHUNK_OVERLAP,
+            )
+
+            # Index chunks in ChromaDB
+            index_chunks(rag_service.collection, chunks, rag_service.embed_model)
+
+            logger.info(f"✓ Embedded document {new_source.id}: {len(chunks)} chunks indexed")
+
+        except Exception as e:
+            # If embedding fails, log but don't fail the upload
+            logger.warning(f"⚠ Failed to embed document {new_source.id}: {str(e)}")
+    else:
+        logger.warning(f"⚠ RAG disabled, skipping document embedding for {new_source.id}")
 
     return SourceForList(
         source_id=new_source.id,
@@ -265,16 +281,24 @@ async def delete_source(source_id: int, user_id: int, db: AsyncSession) -> None:
             status_code=status.HTTP_404_NOT_FOUND, detail="Source not found"
         )
 
-    # Удаляем эмбеддинги из ChromaDB через API
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            delete_response = await client.delete(
-                f"{RAG_API_URL}/embed/document/{source_id}"
+    # Delete embeddings from ChromaDB
+    if app_settings.RAG_ENABLED:
+        try:
+            rag_service = get_rag_service()
+
+            # Delete all chunks for this document from ChromaDB
+            # We filter by document_id in metadata
+            rag_service.collection.delete(
+                where={"document_id": source_id}
             )
-            delete_response.raise_for_status()
-    except Exception as e:
-        # Логируем, но продолжаем удаление документа
-        print(f"Warning: Failed to delete embeddings for document {source_id}: {str(e)}")
+
+            logger.info(f"✓ Deleted embeddings for document {source_id}")
+
+        except Exception as e:
+            # Log but continue with document deletion
+            logger.warning(f"⚠ Failed to delete embeddings for document {source_id}: {str(e)}")
+    else:
+        logger.warning(f"⚠ RAG disabled, skipping embedding deletion for {source_id}")
 
     await db.delete(source)
     await db.commit()

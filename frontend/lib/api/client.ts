@@ -296,23 +296,39 @@ export async function streamRequest<T>(
     const decoder = new TextDecoder()
     let buffer = ""
 
+    const processDataLine = (rawLine: string) => {
+      const line = rawLine.trim()
+      if (!line.startsWith("data:")) {
+        return
+      }
+
+      const jsonStr = line.slice(5).trimStart()
+      if (!jsonStr) {
+        return
+      }
+
+      if (jsonStr === "[DONE]") {
+        callbacks.onComplete?.()
+        return "done"
+      }
+
+      try {
+        callbacks.onChunk(JSON.parse(jsonStr) as T)
+      } catch {
+        // Ignore JSON parse errors for malformed chunks
+      }
+      return
+    }
+
     while (true) {
       const { done, value } = await reader.read()
 
       if (done) {
         if (buffer.trim()) {
           for (const rawLine of buffer.split("\n")) {
-            const line = rawLine.trim()
-            if (!line.startsWith("data: ")) continue
-            const jsonStr = line.slice(6)
-            if (jsonStr === "[DONE]") {
-              callbacks.onComplete?.()
+            const result = processDataLine(rawLine)
+            if (result === "done") {
               return
-            }
-            try {
-              callbacks.onChunk(JSON.parse(jsonStr) as T)
-            } catch {
-              // Ignore JSON parse errors for malformed chunks
             }
           }
         }
@@ -321,25 +337,16 @@ export async function streamRequest<T>(
       }
 
       buffer += decoder.decode(value, { stream: true })
-      const events = buffer.split("\n\n")
-      buffer = events.pop() || ""
 
-      for (const eventText of events) {
-        const lines = eventText.split("\n").map((line) => line.trim())
-        const dataLine = lines.find((line) => line.startsWith("data: "))
-        if (!dataLine) continue
+      // Parse incrementally by single lines as well.
+      // Some SSE servers flush one `data:` line at a time, not full `\n\n` blocks.
+      const lines = buffer.split("\n")
+      buffer = lines.pop() || ""
 
-        const jsonStr = dataLine.slice(6)
-        if (jsonStr === "[DONE]") {
-          callbacks.onComplete?.()
+      for (const rawLine of lines) {
+        const result = processDataLine(rawLine)
+        if (result === "done") {
           return
-        }
-
-        try {
-          const chunk = JSON.parse(jsonStr) as T
-          callbacks.onChunk(chunk)
-        } catch {
-          // Ignore JSON parse errors for malformed chunks
         }
       }
     }

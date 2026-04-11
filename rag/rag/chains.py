@@ -29,3 +29,17 @@ def answer_without_context(model: ChatModel, question: str) -> str:
             {"role": "user", "content": question},
         ]
     )
+
+
+def answer_stream(
+    model: ChatModel,
+    question: str,
+    chunks: Sequence[RetrievedChunk],
+):
+    prompt = build_rag_prompt(question, chunks)
+    return model.stream(
+        [
+            {"role": "system", "content": SYSTEM_INSTRUCTIONS},
+            {"role": "user", "content": prompt},
+        ]
+    )

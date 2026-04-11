@@ -253,7 +253,8 @@ export interface StreamCallbacks<T> {
 export async function streamRequest<T>(
   endpoint: string,
   data: unknown,
-  callbacks: StreamCallbacks<T>
+  callbacks: StreamCallbacks<T>,
+  signal?: AbortSignal
 ): Promise<void> {
   const url = buildUrl(endpoint)
 
@@ -269,6 +270,7 @@ export async function streamRequest<T>(
       method: "POST",
       headers,
       body: JSON.stringify(data),
+      signal,
     })
 
     if (!response.ok) {
@@ -292,38 +294,60 @@ export async function streamRequest<T>(
     }
 
     const decoder = new TextDecoder()
+    let buffer = ""
 
     while (true) {
       const { done, value } = await reader.read()
 
       if (done) {
+        if (buffer.trim()) {
+          for (const rawLine of buffer.split("\n")) {
+            const line = rawLine.trim()
+            if (!line.startsWith("data: ")) continue
+            const jsonStr = line.slice(6)
+            if (jsonStr === "[DONE]") {
+              callbacks.onComplete?.()
+              return
+            }
+            try {
+              callbacks.onChunk(JSON.parse(jsonStr) as T)
+            } catch {
+              // Ignore JSON parse errors for malformed chunks
+            }
+          }
+        }
         callbacks.onComplete?.()
         break
       }
 
-      const text = decoder.decode(value, { stream: true })
-      const lines = text.split("\n").filter((line) => line.trim())
+      buffer += decoder.decode(value, { stream: true })
+      const events = buffer.split("\n\n")
+      buffer = events.pop() || ""
 
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const jsonStr = line.slice(6)
-          if (jsonStr === "[DONE]") {
-            callbacks.onComplete?.()
-            return
-          }
+      for (const eventText of events) {
+        const lines = eventText.split("\n").map((line) => line.trim())
+        const dataLine = lines.find((line) => line.startsWith("data: "))
+        if (!dataLine) continue
 
-          try {
-            const chunk = JSON.parse(jsonStr) as T
-            callbacks.onChunk(chunk)
-          } catch {
-            // Ignore JSON parse errors for malformed chunks
-          }
+        const jsonStr = dataLine.slice(6)
+        if (jsonStr === "[DONE]") {
+          callbacks.onComplete?.()
+          return
+        }
+
+        try {
+          const chunk = JSON.parse(jsonStr) as T
+          callbacks.onChunk(chunk)
+        } catch {
+          // Ignore JSON parse errors for malformed chunks
         }
       }
     }
   } catch (error) {
     if (error instanceof ApiRequestError) {
       callbacks.onError?.(error)
+    } else if (error instanceof Error && error.name === "AbortError") {
+      callbacks.onError?.(new ApiRequestError("The operation was aborted.", "ABORT"))
     } else {
       callbacks.onError?.(
         new ApiRequestError(

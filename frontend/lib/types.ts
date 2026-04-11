@@ -8,6 +8,7 @@ export interface Message {
   id: string
   role: "user" | "assistant"
   content: string
+  status?: "streaming" | "completed" | "error" | "cancelled"
   sources?: Source[]
   timestamp: Date
   isEdited?: boolean

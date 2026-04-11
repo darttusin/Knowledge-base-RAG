@@ -1,7 +1,12 @@
 // Conversation mutations (POST/PUT/DELETE requests)
 
-import { api, safeRequest } from "../client"
-import { adaptDialogueToConversation, type BackendDialogue, type BackendMessage } from "../adapters"
+import { api, safeRequest, streamRequest, type ApiRequestError } from "../client"
+import {
+  adaptDialogueToConversation,
+  type BackendDialogue,
+  type BackendMessage,
+  type BackendSourceReference,
+} from "../adapters"
 import type { ApiResult, ConversationListItem } from "@/types/api"
 
 const ENDPOINTS = {
@@ -9,6 +14,7 @@ const ENDPOINTS = {
   update: (id: string) => `/api/dialogue/${id}`,
   delete: (id: string) => `/api/dialogue/${id}`,
   sendMessage: "/api/message",
+  sendMessageStream: "/api/message/stream",
 }
 
 export interface SendMessageRequest {
@@ -20,7 +26,29 @@ export interface SendMessageResponse {
   userMessage: string
   assistantMessage: string
   messageId: string
-  sources: string[]
+  sources: BackendSourceReference[]
+}
+
+export interface SendMessageStreamChunkEvent {
+  type: "chunk"
+  delta: string
+}
+
+export interface SendMessageStreamCompleteEvent {
+  type: "complete"
+  sources: BackendMessage["sources"]
+  message_id: number
+  created_at: string
+}
+
+export type SendMessageStreamEvent =
+  | SendMessageStreamChunkEvent
+  | SendMessageStreamCompleteEvent
+
+export interface SendMessageStreamCallbacks {
+  onChunk: (delta: string) => void
+  onComplete: (payload: SendMessageStreamCompleteEvent) => void
+  onError?: (error: ApiRequestError) => void
 }
 
 /**
@@ -97,4 +125,32 @@ export async function sendMessage(
       sources: result.data.sources,
     },
   }
+}
+
+export async function sendMessageStream(
+  dialogueId: number,
+  message: string,
+  callbacks: SendMessageStreamCallbacks,
+  signal?: AbortSignal
+): Promise<void> {
+  await streamRequest<SendMessageStreamEvent>(
+    ENDPOINTS.sendMessageStream,
+    {
+      dialogue_id: dialogueId,
+      message,
+    },
+    {
+      onChunk: (event) => {
+        if (event.type === "chunk") {
+          callbacks.onChunk(event.delta)
+          return
+        }
+        if (event.type === "complete") {
+          callbacks.onComplete(event)
+        }
+      },
+      onError: callbacks.onError,
+    },
+    signal
+  )
 }

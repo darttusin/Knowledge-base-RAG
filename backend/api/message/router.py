@@ -30,6 +30,25 @@ async def send_message(
 ) -> MessageResponse:
     return await controller.send_message(data, user_id, db)
 
+@router.post(
+    "/stream",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {"model": ErrorMessage, "description": "Dialogue not found"},
+        401: {"model": ErrorMessage, "description": "Unauthorized"},
+        503: {"model": ErrorMessage, "description": "RAG API unavailable"},
+        500: {"model": ErrorMessage, "description": "RAG API error"},
+    },
+    summary="Отправить сообщение (streaming)",
+    description="Streaming-ответ с SSE событиями chunk/complete. Требует JWT токен.",
+)
+async def send_message_stream(
+    data: SendMessage,
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    return await controller.send_message_stream(data, user_id, db)
+
 
 @router.post(
     "/feedback",

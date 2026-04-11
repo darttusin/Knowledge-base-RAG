@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
@@ -354,9 +355,88 @@ async def send_message_stream(
             )
 
         assistant_chunks: list[str] = []
-        for delta in rag_response.stream:
-            assistant_chunks.append(delta)
-            yield _sse_event({"type": "chunk", "delta": delta})
+        queue: asyncio.Queue[tuple[str, str | Exception | None]] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def _produce_stream_chunks() -> None:
+            try:
+                for delta in rag_response.stream:
+                    loop.call_soon_threadsafe(queue.put_nowait, ("chunk", delta))
+            except Exception as exc:  # pragma: no cover - defensive stream bridge
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+
+        stream_task = asyncio.create_task(asyncio.to_thread(_produce_stream_chunks))
+
+        stream_error: Exception | None = None
+        while True:
+            event_type, payload = await queue.get()
+            if event_type == "chunk":
+                delta = str(payload or "")
+                assistant_chunks.append(delta)
+                yield _sse_event({"type": "chunk", "delta": delta})
+                continue
+
+            if event_type == "error":
+                if isinstance(payload, Exception):
+                    stream_error = payload
+                continue
+
+            if event_type == "done":
+                break
+
+        await stream_task
+
+        if stream_error:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"RAG stream error: {str(stream_error)}",
+            )
+
+        chunks_by_source: dict[int, list[tuple[int, float, str]]] = {}
+        source_metadata: dict[int, tuple[str, str | None]] = {}
+        for position, chunk in enumerate(rag_response.chunks, start=1):
+            source_path = chunk.source
+            for prefix in ["drive/MyDrive/dataset/", "dataset/"]:
+                if source_path.startswith(prefix):
+                    source_path = source_path[len(prefix):]
+                    break
+            source_obj = await find_source_by_path(source_path, user_id, db)
+            if source_obj:
+                if source_obj.id not in chunks_by_source:
+                    chunks_by_source[source_obj.id] = []
+                    folder_path = source_obj.folder.path if source_obj.folder else None
+                    source_metadata[source_obj.id] = (source_obj.name, folder_path)
+                chunks_by_source[source_obj.id].append((position, chunk.score, chunk.text))
+
+        relevance_scores = calculate_smart_relevance(chunks_by_source)
+        source_references: list[SourceReference] = []
+        for source_id, (relevance_score, best_chunk_text) in relevance_scores.items():
+            document_name, folder_path = source_metadata[source_id]
+            source_references.append(
+                SourceReference(
+                    source_id=source_id,
+                    document_name=document_name,
+                    chunk_text=best_chunk_text,
+                    relevance_score=relevance_score,
+                    folder_path=folder_path,
+                )
+            )
+
+        source_references = sorted(
+            source_references,
+            key=lambda x: x.relevance_score,
+            reverse=True
+        )
+
+        assistant_response = "".join(assistant_chunks)
+        assistant_response = remap_response_citations(
+            assistant_response,
+            chunks_by_source,
+            source_references,
+        )
 
         chunks_by_source: dict[int, list[tuple[int, float, str]]] = {}
         source_metadata: dict[int, tuple[str, str | None]] = {}

@@ -1,13 +1,15 @@
 import { create } from "zustand"
 import { devtools } from "zustand/middleware"
-import type { Conversation, Message, Source } from "@/lib/types"
+import type { Conversation, Message, Source, PreGeneratedQuery } from "@/lib/types"
 import {
   getConversations,
   getConversation,
   createConversation,
+  updateConversation as apiUpdateConversation,
   deleteConversation as apiDeleteConversation,
   sendMessage as apiSendMessage,
   getDocuments,
+  getPreGeneratedQueries,
 } from "@/lib/api"
 import { toast } from "sonner"
 
@@ -23,16 +25,20 @@ interface ChatState {
   totalDocuments: number
   isLoading: boolean
   error: string | null
+  preGeneratedQueries: PreGeneratedQuery[]
 }
 
 interface ChatActions {
   // API actions
   loadConversations: () => Promise<void>
   loadDocumentCount: () => Promise<void>
+  loadPreGeneratedQueries: () => Promise<void>
   createConversation: () => Promise<void>
   selectConversation: (conversation: Conversation) => Promise<void>
+  updateConversation: (id: string, title: string) => Promise<void>
   deleteConversation: (id: string) => Promise<void>
   sendMessage: (content: string) => Promise<void>
+  editMessage: (messageId: string, newContent: string) => Promise<void>
 
   // UI actions
   toggleSources: () => void
@@ -60,6 +66,7 @@ export const useChatStore = create<ChatStore>()(
       totalDocuments: 0,
       isLoading: false,
       error: null,
+      preGeneratedQueries: [],
 
       // Load conversations from API
       loadConversations: async () => {
@@ -96,6 +103,15 @@ export const useChatStore = create<ChatStore>()(
         }
       },
 
+      // Load pre-generated queries
+      loadPreGeneratedQueries: async () => {
+        const result = await getPreGeneratedQueries()
+
+        if (result.success) {
+          set({ preGeneratedQueries: result.data })
+        }
+      },
+
       // Create new conversation
       createConversation: async () => {
         const result = await createConversation()
@@ -105,6 +121,7 @@ export const useChatStore = create<ChatStore>()(
             id: result.data.id,
             title: result.data.title,
             messages: [],
+            preGeneratedQueries: result.data.preGeneratedQueries,
             createdAt: new Date(result.data.createdAt),
             updatedAt: new Date(result.data.updatedAt),
           }
@@ -113,6 +130,7 @@ export const useChatStore = create<ChatStore>()(
             conversations: [newConvo, ...state.conversations],
             activeConversation: newConvo,
             selectedSources: [],
+            preGeneratedQueries: result.data.preGeneratedQueries || [],
           }))
 
           toast.success("New conversation created")
@@ -144,25 +162,67 @@ export const useChatStore = create<ChatStore>()(
                 timestamp: new Date(msg.timestamp),
                 feedback: msg.role === "assistant" ? (msg as any).feedback : undefined,
               })) || [],
+              preGeneratedQueries: result.data.preGeneratedQueries,
               createdAt: new Date(result.data.createdAt),
               updatedAt: new Date(result.data.updatedAt),
             }
+
+            // Collect all sources from all messages
+            const allSources: Source[] = []
+            fullConversation.messages?.forEach((msg) => {
+              if (msg.sources) {
+                allSources.push(...msg.sources)
+              }
+            })
 
             set((state) => ({
               activeConversation: fullConversation,
               conversations: state.conversations.map((c) =>
                 c.id === fullConversation.id ? fullConversation : c
               ),
+              selectedSources: allSources,
+              preGeneratedQueries: result.data.preGeneratedQueries || state.preGeneratedQueries,
               isLoading: false,
             }))
           } else {
             // On error, still set as active but with empty messages
             set({
               activeConversation: { ...conversation, messages: [] },
+              selectedSources: [],
               isLoading: false
             })
             toast.error(`Failed to load conversation: ${result.error}`)
           }
+        } else {
+          // If already loaded, still update selectedSources
+          const allSources: Source[] = []
+          conversation.messages?.forEach((msg) => {
+            if (msg.sources) {
+              allSources.push(...msg.sources)
+            }
+          })
+          set({ selectedSources: allSources })
+        }
+      },
+
+      // Update conversation (rename)
+      updateConversation: async (id, title) => {
+        const result = await apiUpdateConversation(id, title)
+
+        if (result.success) {
+          set((state) => ({
+            conversations: state.conversations.map((c) =>
+              c.id === id ? { ...c, title } : c
+            ),
+            activeConversation:
+              state.activeConversation?.id === id
+                ? { ...state.activeConversation, title }
+                : state.activeConversation,
+          }))
+
+          toast.success("Conversation renamed")
+        } else {
+          toast.error(`Failed to rename conversation: ${result.error}`)
         }
       },
 
@@ -203,6 +263,7 @@ export const useChatStore = create<ChatStore>()(
             id: createResult.data.id,
             title: createResult.data.title,
             messages: [],
+            preGeneratedQueries: createResult.data.preGeneratedQueries,
             createdAt: new Date(createResult.data.createdAt),
             updatedAt: new Date(createResult.data.updatedAt),
           }
@@ -210,6 +271,7 @@ export const useChatStore = create<ChatStore>()(
           set((state) => ({
             conversations: [newConvo, ...state.conversations],
             activeConversation: newConvo,
+            preGeneratedQueries: createResult.data.preGeneratedQueries || [],
           }))
 
           activeConversation = newConvo
@@ -234,21 +296,29 @@ export const useChatStore = create<ChatStore>()(
           isWaitingForResponse: true,
         }))
 
+        // Check if this is first message (for title update)
+        const isFirstMessage = (activeConversation.messages?.length || 0) === 0
+
         // Send to API
         const result = await apiSendMessage(parseInt(activeConversation.id), content)
 
         if (result.success) {
+          // Convert backend source references to frontend Source type
+          const sources = result.data.sources.map((sourceRef, idx) => ({
+            id: `source-${result.data.messageId}-${idx}`,
+            title: sourceRef.document_name,
+            content: sourceRef.chunk_text,
+            relevance: sourceRef.relevance_score,
+            type: "document" as const,
+            documentId: sourceRef.source_id.toString(),
+            folderPath: sourceRef.folder_path || undefined,
+          }))
+
           const assistantMessage: Message = {
             id: result.data.messageId,
             role: "assistant",
             content: result.data.assistantMessage,
-            sources: result.data.sources.map((url, idx) => ({
-              id: `source-${idx}`,
-              title: `Source ${idx + 1}`,
-              content: url,
-              relevance: 0.9,
-              type: "document" as const,
-            })),
+            sources,
             timestamp: new Date(),
           }
 
@@ -261,6 +331,10 @@ export const useChatStore = create<ChatStore>()(
                 }
               : null
 
+            // Add new sources to existing ones
+            const newSources = assistantMessage.sources || []
+            const allSources = [...state.selectedSources, ...newSources]
+
             return {
               activeConversation: updatedConversation,
               conversations: updatedConversation
@@ -268,10 +342,25 @@ export const useChatStore = create<ChatStore>()(
                     c.id === updatedConversation.id ? updatedConversation : c
                   )
                 : state.conversations,
-              selectedSources: assistantMessage.sources || [],
+              selectedSources: allSources,
               isWaitingForResponse: false,
             }
           })
+
+          // If this was first message, reload conversation to get updated title
+          if (isFirstMessage) {
+            const updatedConvo = await getConversation(activeConversation.id)
+            if (updatedConvo.success) {
+              set((state) => ({
+                activeConversation: state.activeConversation
+                  ? { ...state.activeConversation, title: updatedConvo.data.title }
+                  : null,
+                conversations: state.conversations.map((c) =>
+                  c.id === activeConversation.id ? { ...c, title: updatedConvo.data.title } : c
+                ),
+              }))
+            }
+          }
         } else {
           set({ isWaitingForResponse: false })
           toast.error(`Failed to send message: ${result.error}`)
@@ -311,6 +400,12 @@ export const useChatStore = create<ChatStore>()(
 
       clearFolderSelection: () => {
         set({ selectedFolderIds: [] })
+      },
+
+      // Edit message (regenerates response)
+      editMessage: async (messageId, newContent) => {
+        // Simply re-send the message to regenerate
+        await get().sendMessage(newContent)
       },
     }),
     { name: "chat-store" }

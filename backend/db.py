@@ -62,6 +62,7 @@ class Message(Base):
     )
     user_message: Mapped[str] = mapped_column(Text, nullable=False)
     assistant_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sources: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of source URLs
     feedback: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
 

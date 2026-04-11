@@ -17,6 +17,7 @@ interface MessageListProps {
 export function MessageList({ onSourceClick, onSuggestionClick }: MessageListProps) {
   const conversation = useChatStore((s) => s.activeConversation)
   const isWaitingForResponse = useChatStore((s) => s.isWaitingForResponse)
+  const preGeneratedQueries = useChatStore((s) => s.preGeneratedQueries)
   const editMessage = useChatStore((s) => s.editMessage)
   const scrollRef = useRef<HTMLDivElement>(null)
   const messageGroups = useMessageGroups(conversation)
@@ -47,7 +48,10 @@ export function MessageList({ onSourceClick, onSuggestionClick }: MessageListPro
     >
       <div className="p-3 sm:p-4">
         {!conversation?.messages || conversation.messages.length === 0 ? (
-          <ChatEmptyState onSuggestionClick={onSuggestionClick} />
+          <ChatEmptyState
+            suggestions={preGeneratedQueries}
+            onSuggestionClick={onSuggestionClick}
+          />
         ) : (
           <div className="mx-auto max-w-3xl space-y-4 sm:space-y-6">
             {messageGroups.map((group) => (

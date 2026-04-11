@@ -36,6 +36,7 @@ export function ChatSidebar() {
   const isOpen = useChatStore((s) => s.sidebarOpen)
   const selectConversation = useChatStore((s) => s.selectConversation)
   const createConversation = useChatStore((s) => s.createConversation)
+  const updateConversation = useChatStore((s) => s.updateConversation)
   const deleteConversation = useChatStore((s) => s.deleteConversation)
   const toggleSidebar = useChatStore((s) => s.toggleSidebar)
 
@@ -103,6 +104,7 @@ export function ChatSidebar() {
                 conversation={conversation}
                 isActive={activeConversation?.id === conversation.id}
                 onSelect={() => selectConversation(conversation)}
+                onRename={(newTitle) => updateConversation(conversation.id, newTitle)}
                 onDelete={() => deleteConversation(conversation.id)}
               />
             ))}
@@ -120,6 +122,7 @@ export function ChatSidebar() {
                 conversation={conversation}
                 isActive={activeConversation?.id === conversation.id}
                 onSelect={() => selectConversation(conversation)}
+                onRename={(newTitle) => updateConversation(conversation.id, newTitle)}
                 onDelete={() => deleteConversation(conversation.id)}
               />
             ))}
@@ -137,6 +140,7 @@ export function ChatSidebar() {
                 conversation={conversation}
                 isActive={activeConversation?.id === conversation.id}
                 onSelect={() => selectConversation(conversation)}
+                onRename={(newTitle) => updateConversation(conversation.id, newTitle)}
                 onDelete={() => deleteConversation(conversation.id)}
               />
             ))}
@@ -172,10 +176,46 @@ interface ConversationItemProps {
   conversation: Conversation
   isActive: boolean
   onSelect: () => void
+  onRename: (newTitle: string) => void
   onDelete: () => void
 }
 
-function ConversationItem({ conversation, isActive, onSelect, onDelete }: ConversationItemProps) {
+function ConversationItem({ conversation, isActive, onSelect, onRename, onDelete }: ConversationItemProps) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editValue, setEditValue] = useState(conversation.title)
+
+  const handleRename = () => {
+    if (editValue.trim() && editValue !== conversation.title) {
+      onRename(editValue.trim())
+    }
+    setIsEditing(false)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleRename()
+    } else if (e.key === "Escape") {
+      setEditValue(conversation.title)
+      setIsEditing(false)
+    }
+  }
+
+  if (isEditing) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg px-2 py-2">
+        <Input
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={handleRename}
+          onKeyDown={handleKeyDown}
+          className="h-7 text-sm"
+          autoFocus
+          onClick={(e) => e.stopPropagation()}
+        />
+      </div>
+    )
+  }
+
   return (
     <div
       className={cn(
@@ -200,7 +240,12 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete }: Conver
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-40">
-          <DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsEditing(true)
+            }}
+          >
             <Edit2 className="mr-2 h-4 w-4" />
             Rename
           </DropdownMenuItem>

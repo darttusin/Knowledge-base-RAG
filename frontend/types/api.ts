@@ -133,6 +133,7 @@ export interface SourceResponse {
   type: "document" | "database" | "api"
   fileType?: "md" | "txt"
   uploadedAt?: string
+  folderPath?: string
 }
 
 export interface SourceDetailResponse extends SourceResponse {

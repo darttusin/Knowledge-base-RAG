@@ -13,8 +13,6 @@ import {
   Globe,
   Copy,
   ExternalLink,
-  Calendar,
-  User,
   Hash,
   CheckCircle2,
   Clock,
@@ -96,43 +94,19 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
 
         <ScrollArea className="max-h-[calc(85vh-180px)] flex-1">
           <div className="space-y-6 p-6">
-            {/* Meta info */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex items-center gap-2 text-sm">
-                <User className="text-muted-foreground h-4 w-4" />
-                <span className="text-muted-foreground">Author:</span>
-                <span className="text-foreground font-medium">{extendedData.author}</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <Calendar className="text-muted-foreground h-4 w-4" />
-                <span className="text-muted-foreground">Updated:</span>
-                <span className="text-foreground font-medium">{extendedData.updatedAt}</span>
-              </div>
-              <div className="col-span-2 flex items-center gap-2 text-sm">
-                <Hash className="text-muted-foreground h-4 w-4" />
-                <span className="text-muted-foreground">Path:</span>
-                <code className="bg-muted text-foreground truncate rounded px-2 py-0.5 font-mono text-xs">
-                  {extendedData.path}
-                </code>
-              </div>
-            </div>
-
-            {/* Tags */}
-            {extendedData.tags.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {extendedData.tags.map((tag) => (
-                  <Badge
-                    key={tag}
-                    variant="secondary"
-                    className="bg-muted/50 hover:bg-muted text-xs"
-                  >
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
+            {/* Folder path if exists */}
+            {source.folderPath && (
+              <>
+                <div className="flex items-center gap-2 text-sm">
+                  <Hash className="text-muted-foreground h-4 w-4" />
+                  <span className="text-muted-foreground">Folder:</span>
+                  <code className="bg-muted text-foreground truncate rounded px-2 py-0.5 font-mono text-xs">
+                    {source.folderPath}
+                  </code>
+                </div>
+                <Separator />
+              </>
             )}
-
-            <Separator />
 
             {/* Content */}
             <div>

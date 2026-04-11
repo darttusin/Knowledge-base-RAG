@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from db import Dialogue
+from services.rag_service import RagService
 
 from .models import (
     CreateDialogue,
@@ -12,6 +13,7 @@ from .models import (
     MessageResponse,
     PreGeneratedQuery,
     ShortDialogue,
+    SourceReference,
     UpdateDialogue,
 )
 
@@ -19,11 +21,61 @@ from .models import (
 def generate_pre_generated_queries() -> list[PreGeneratedQuery]:
     return [
         PreGeneratedQuery(
-            query="Как создать нейронную сеть в PyTorch?", icon=IconsEnum.doc
+            query="How does autograd work for automatic differentiation?",
+            icon=IconsEnum.doc,
         ),
-        PreGeneratedQuery(query="Что такое tensor в PyTorch?", icon=IconsEnum.database),
-        PreGeneratedQuery(query="Как использовать DataLoader?", icon=IconsEnum.browser),
+        PreGeneratedQuery(
+            query="What's the difference between torch.nn.Module and torch.nn.functional?",
+            icon=IconsEnum.database,
+        ),
+        PreGeneratedQuery(
+            query="How to properly configure a learning rate scheduler?",
+            icon=IconsEnum.browser,
+        ),
     ]
+
+
+def generate_dialogue_title(question: str, rag_service: RagService) -> str:
+    """Generate dialogue title from first question using LLM.
+
+    Args:
+        question: User's first question
+        rag_service: RAG service instance with chat model
+
+    Returns:
+        Generated title (3-6 words)
+    """
+    prompt = f"""Generate a short, concise title (3-6 words) for a conversation that starts with this question.
+The title should capture the main topic or intent of the question.
+Output ONLY the title, nothing else.
+
+Question: {question}
+Title:"""
+
+    try:
+        # Use chat model directly for title generation
+        response = rag_service.chat_model.chat(
+            [{"role": "user", "content": prompt}], max_tokens=20, temperature=0.7
+        )
+        title = response.strip()
+        print("dialog title", title)
+
+        # Fallback if title is too long or empty
+        if not title or len(title) > 100:
+            # Extract first few words from question
+            words = question.split()[:5]
+            title = " ".join(words)
+            if len(question.split()) > 5:
+                title += "..."
+
+        return title
+    except Exception:
+        # Fallback on error
+        words = question.split()[:5]
+        title = " ".join(words)
+        if len(question.split()) > 5:
+            title += "..."
+        return title
 
 
 async def create_dialogue(
@@ -64,16 +116,34 @@ async def get_dialogue(
 
     pre_generated = generate_pre_generated_queries()
 
-    messages = [
-        MessageResponse(
-            message_id=msg.id,
-            user_message=msg.user_message,
-            assistant_response=msg.assistant_response,
-            feedback=msg.feedback,
-            created_at=msg.created_at.isoformat(),
+    import json
+
+    messages = []
+    for msg in dialogue.messages:
+        # Parse sources from JSON
+        sources = None
+        if msg.sources:
+            try:
+                sources_data = json.loads(msg.sources)
+                # Handle both old format (list of strings) and new format (list of SourceReference dicts)
+                if sources_data and isinstance(sources_data[0], dict):
+                    sources = [SourceReference(**src) for src in sources_data]
+                else:
+                    # Old format - list of paths, skip for now or convert to empty
+                    sources = None
+            except (json.JSONDecodeError, KeyError, TypeError):
+                sources = None
+
+        messages.append(
+            MessageResponse(
+                message_id=msg.id,
+                user_message=msg.user_message,
+                assistant_response=msg.assistant_response,
+                sources=sources,
+                feedback=msg.feedback,
+                created_at=msg.created_at.isoformat(),
+            )
         )
-        for msg in dialogue.messages
-    ]
 
     return DialogueResponse(
         dialogue_id=dialogue.id,

@@ -12,7 +12,11 @@ import { FILE_EXTENSION_COLORS } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import { useChatStore } from "@/lib/store/chat-store"
 
-export function SourcesPanel() {
+interface SourcesPanelProps {
+  onSourceClick?: (source: Source) => void
+}
+
+export function SourcesPanel({ onSourceClick }: SourcesPanelProps) {
   const sources = useChatStore((s) => s.selectedSources)
   const closeSources = useChatStore((s) => s.closeSources)
 
@@ -70,7 +74,7 @@ export function SourcesPanel() {
                 {resultCount} document{resultCount !== 1 ? "s" : ""} found
               </p>
               {filteredItems.map((source) => (
-                <SourceCard key={source.id} source={source} />
+                <SourceCard key={source.id} source={source} onClick={onSourceClick} />
               ))}
             </div>
           )}
@@ -82,9 +86,10 @@ export function SourcesPanel() {
 
 interface SourceCardProps {
   source: Source
+  onClick?: (source: Source) => void
 }
 
-function SourceCard({ source }: SourceCardProps) {
+function SourceCard({ source, onClick }: SourceCardProps) {
   const router = useRouter()
 
   const getFileExtension = (title: string) => {
@@ -98,11 +103,15 @@ function SourceCard({ source }: SourceCardProps) {
   const colorClass = FILE_EXTENSION_COLORS[extension] || FILE_EXTENSION_COLORS.DOC
 
   const handleOpen = () => {
-    router.push(`/documents?id=${source.documentId}`)
+    if (onClick) {
+      onClick(source)
+    } else {
+      router.push(`/documents?id=${source.documentId}`)
+    }
   }
 
   return (
-    <div className="group hover:bg-muted/50 cursor-pointer rounded-xl p-3 transition-colors">
+    <div className="group hover:bg-muted/50 cursor-pointer rounded-xl p-3 transition-colors" onClick={handleOpen}>
       <div className="flex items-start gap-3">
         <div
           className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", colorClass)}
@@ -116,6 +125,11 @@ function SourceCard({ source }: SourceCardProps) {
               {Math.round(source.relevance * 100)}%
             </span>
           </div>
+          {source.folderPath && (
+            <p className="text-muted-foreground mt-0.5 truncate text-xs">
+              📁 {source.folderPath}
+            </p>
+          )}
           <p className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-relaxed">
             {source.content}
           </p>

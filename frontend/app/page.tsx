@@ -1,25 +1,35 @@
 "use client"
 
-import { useEffect, Suspense } from "react"
+import { useEffect, Suspense, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useChatStore } from "@/lib/store/chat-store"
 import { useFolderStore } from "@/lib/store/folder-store"
 import { ChatSidebar } from "@/components/chat-sidebar"
 import { ChatMain } from "@/components/chat-main"
 import { SourcesPanel } from "@/components/sources-panel"
+import { SourceDetailModal } from "@/components/source-detail-modal"
 import { isAuthenticated } from "@/lib/auth"
+import type { Source } from "@/lib/types"
 
 function HomeContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const [selectedSource, setSelectedSource] = useState<Source | null>(null)
+  const [sourceModalOpen, setSourceModalOpen] = useState(false)
   const showSources = useChatStore((s) => s.showSources)
   const conversations = useChatStore((s) => s.conversations)
   const activeConversation = useChatStore((s) => s.activeConversation)
   const isLoading = useChatStore((s) => s.isLoading)
   const loadConversations = useChatStore((s) => s.loadConversations)
   const loadDocumentCount = useChatStore((s) => s.loadDocumentCount)
+  const loadPreGeneratedQueries = useChatStore((s) => s.loadPreGeneratedQueries)
   const selectConversation = useChatStore((s) => s.selectConversation)
   const loadFolders = useFolderStore((s) => s.loadFolders)
+
+  const handleSourceClick = (source: Source) => {
+    setSelectedSource(source)
+    setSourceModalOpen(true)
+  }
 
   // Check authentication and load data
   useEffect(() => {
@@ -28,11 +38,12 @@ function HomeContent() {
       return
     }
 
-    // Load conversations, folders, and document count from API
+    // Load conversations, folders, document count, and pre-generated queries from API
     loadConversations()
     loadFolders()
     loadDocumentCount()
-  }, [router, loadConversations, loadFolders, loadDocumentCount])
+    loadPreGeneratedQueries()
+  }, [router, loadConversations, loadFolders, loadDocumentCount, loadPreGeneratedQueries])
 
   // Handle URL-driven conversation selection
   useEffect(() => {
@@ -72,8 +83,13 @@ function HomeContent() {
   return (
     <div className="bg-background flex h-screen overflow-hidden">
       <ChatSidebar />
-      <ChatMain />
-      {showSources && <SourcesPanel />}
+      <ChatMain onSourceClick={handleSourceClick} />
+      {showSources && <SourcesPanel onSourceClick={handleSourceClick} />}
+      <SourceDetailModal
+        source={selectedSource}
+        open={sourceModalOpen}
+        onOpenChange={setSourceModalOpen}
+      />
     </div>
   )
 }

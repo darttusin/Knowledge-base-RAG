@@ -3,7 +3,6 @@
 import { Button } from "@/components/ui/button"
 import { TooltipButton } from "@/components/tooltip-button"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { FolderSelector } from "@/components/chat/folder-selector"
 import { PanelLeftOpen, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useChatStore } from "@/lib/store/chat-store"
@@ -48,7 +47,6 @@ export function ChatHeader() {
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-        {hasMessages && <FolderSelector />}
         <ThemeToggle />
         <TooltipButton
           tooltip="Toggle sources panel"

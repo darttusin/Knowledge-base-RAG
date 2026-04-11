@@ -28,6 +28,14 @@ export interface BackendSourcesList {
 }
 
 /**
+ * Backend pre-generated query
+ */
+export interface BackendPreGeneratedQuery {
+  query: string
+  icon: "database" | "doc" | "browser"
+}
+
+/**
  * Backend dialogue response
  */
 export interface BackendDialogue {
@@ -35,7 +43,19 @@ export interface BackendDialogue {
   name: string
   created_at: string
   updated_at: string
+  pre_generated_queries?: BackendPreGeneratedQuery[]
   messages?: BackendDialogueMessage[]
+}
+
+/**
+ * Backend source reference
+ */
+export interface BackendSourceReference {
+  source_id: number
+  document_name: string
+  chunk_text: string
+  relevance_score: number
+  folder_path?: string | null
 }
 
 /**
@@ -45,6 +65,7 @@ export interface BackendDialogueMessage {
   message_id: number
   user_message: string
   assistant_response: string | null
+  sources: BackendSourceReference[] | null
   feedback: string | null
   created_at: string
 }
@@ -56,7 +77,7 @@ export interface BackendMessage {
   message_id: number
   user_message: string
   assistant_response: string
-  sources: string[]
+  sources: BackendSourceReference[]
   code_executions: Array<{
     code: string
     success: boolean
@@ -112,6 +133,17 @@ export function adaptDialogueMessage(message: BackendDialogueMessage) {
     }
   }
 
+  // Convert sources from BackendSourceReference to Source objects
+  const sources = message.sources?.map((sourceRef, idx) => ({
+    id: `source-${message.message_id}-${idx}`,
+    title: sourceRef.document_name,
+    content: sourceRef.chunk_text,
+    relevance: sourceRef.relevance_score,
+    type: "document" as const,
+    documentId: sourceRef.source_id.toString(),
+    folderPath: sourceRef.folder_path || undefined,
+  })) || undefined
+
   // Return both user and assistant messages
   return [
     {
@@ -124,6 +156,7 @@ export function adaptDialogueMessage(message: BackendDialogueMessage) {
       id: message.message_id.toString(),
       role: "assistant" as const,
       content: message.assistant_response,
+      sources,
       timestamp: new Date(message.created_at),
       feedback: message.feedback as "like" | "dislike" | undefined,
     },
@@ -144,6 +177,7 @@ export function adaptDialogueToConversation(dialogue: BackendDialogue) {
     messageCount: dialogue.messages?.length || 0,
     createdAt: dialogue.created_at,
     updatedAt: dialogue.updated_at,
+    preGeneratedQueries: dialogue.pre_generated_queries,
     messages,
   }
 }

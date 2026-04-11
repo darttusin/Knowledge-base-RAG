@@ -12,24 +12,55 @@ import { useCopyFeedback } from "@/hooks/useCopyFeedback"
 import { Bot, Copy, Check, ThumbsUp, ThumbsDown, RefreshCw } from "lucide-react"
 import type { Message, Source } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { sendMessageFeedback } from "@/lib/api"
+import { toast } from "sonner"
 
 interface AssistantMessageBubbleProps {
   message: Message
   onSourceClick: (source: Source) => void
+  onRegenerate?: () => void
 }
 
-export function AssistantMessageBubble({ message, onSourceClick }: AssistantMessageBubbleProps) {
-  const [feedback, setFeedback] = useState<"like" | "dislike" | null>(null)
+export function AssistantMessageBubble({ message, onSourceClick, onRegenerate }: AssistantMessageBubbleProps) {
+  const [feedback, setFeedback] = useState<"like" | "dislike" | null>(message.feedback || null)
   const { copied, copy } = useCopyFeedback()
 
   const handleCopy = () => copy(message.content)
 
-  const handleFeedback = (type: "like" | "dislike") => {
-    setFeedback(feedback === type ? null : type)
+  const handleFeedback = async (type: "like" | "dislike") => {
+    const newFeedback = feedback === type ? null : type
+    setFeedback(newFeedback)
+
+    // Send to backend if feedback is set (not null)
+    if (newFeedback) {
+      const result = await sendMessageFeedback(parseInt(message.id), newFeedback)
+      if (!result.success) {
+        toast.error(`Failed to send feedback: ${result.error}`)
+        setFeedback(feedback) // Revert on error
+      }
+    }
   }
 
-  // Render markdown with custom code block component
+  const handleRegenerate = () => {
+    if (onRegenerate) {
+      onRegenerate()
+    }
+  }
+
+  // Render markdown with custom code block and source link components
   const renderContent = () => {
+    // Replace [§N] citations with clickable links
+    const contentWithSourceLinks = message.content.replace(
+      /\[§(\d+)\]/g,
+      (match, num) => {
+        const sourceIndex = parseInt(num) - 1
+        if (message.sources && message.sources[sourceIndex]) {
+          return `[§${num}](#source-${sourceIndex})`
+        }
+        return match
+      }
+    )
+
     return (
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
@@ -50,9 +81,44 @@ export function AssistantMessageBubble({ message, onSourceClick }: AssistantMess
               </code>
             )
           },
+          a({ href, children, ...props }) {
+            // Handle source citations
+            if (href?.startsWith("#source-")) {
+              const sourceIndex = parseInt(href.replace("#source-", ""))
+              const source = message.sources?.[sourceIndex]
+
+              return (
+                <button
+                  className="text-primary hover:text-primary/80 mx-0.5 inline-flex cursor-pointer items-baseline font-medium underline-offset-2 hover:underline"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    if (source) {
+                      onSourceClick(source)
+                    }
+                  }}
+                  {...props}
+                >
+                  {children}
+                </button>
+              )
+            }
+
+            // Regular links
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:text-primary/80 underline-offset-2 hover:underline"
+                {...props}
+              >
+                {children}
+              </a>
+            )
+          },
         }}
       >
-        {message.content}
+        {contentWithSourceLinks}
       </ReactMarkdown>
     )
   }
@@ -192,6 +258,7 @@ export function AssistantMessageBubble({ message, onSourceClick }: AssistantMess
                   variant="ghost"
                   size="icon"
                   className="text-muted-foreground hover:text-foreground hover:bg-muted/50 h-7 w-7 transition-all duration-200 active:rotate-180 sm:h-8 sm:w-8"
+                  onClick={handleRegenerate}
                 >
                   <RefreshCw className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 </Button>

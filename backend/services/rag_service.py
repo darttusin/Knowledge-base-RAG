@@ -99,6 +99,8 @@ class RagService:
         is_on_topic = result.labels[0] == 1
         confidence = abs(float(result.scores[0]))
 
+        logger.debug(f"{is_on_topic=} {confidence=}")
+
         return is_on_topic, confidence
 
     def retrieve_chunks(

@@ -22,11 +22,21 @@ class CodeExecution(BaseModel):
     error: str | None = None
 
 
+class SourceReference(BaseModel):
+    """Source reference with full metadata."""
+
+    source_id: int
+    document_name: str
+    chunk_text: str
+    relevance_score: float
+    folder_path: str | None = None
+
+
 class MessageResponse(BaseModel):
     message_id: int
     user_message: str
     assistant_response: str
-    sources: list[str]
+    sources: list[SourceReference]
     code_executions: list[CodeExecution] = []
     created_at: str
 

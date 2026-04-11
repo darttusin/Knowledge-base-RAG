@@ -29,10 +29,16 @@ export interface Source {
   documentId: string
 }
 
+export interface PreGeneratedQuery {
+  query: string
+  icon: "database" | "doc" | "browser"
+}
+
 export interface Conversation {
   id: string
   title: string
   messages?: Message[] // undefined means not loaded yet, [] means loaded but empty
+  preGeneratedQueries?: PreGeneratedQuery[]
   createdAt: Date
   updatedAt: Date
 }

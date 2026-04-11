@@ -30,13 +30,22 @@ export function MessageGroup({
   const currentResponse = responses[currentResponseIndex]
   const hasMultipleResponses = responses.length > 1
 
+  // Regenerate by re-sending the same user message
+  const handleRegenerate = () => {
+    onEditMessage(userMessage.id, userMessage.content)
+  }
+
   return (
     <div className="space-y-4 sm:space-y-6">
       <UserMessageBubble message={userMessage} onEditMessage={onEditMessage} />
 
       {currentResponse && (
         <div className="space-y-2">
-          <AssistantMessageBubble message={currentResponse} onSourceClick={onSourceClick} />
+          <AssistantMessageBubble
+            message={currentResponse}
+            onSourceClick={onSourceClick}
+            onRegenerate={handleRegenerate}
+          />
 
           {hasMultipleResponses && (
             <div className="ml-9 flex items-center gap-1 sm:ml-12">

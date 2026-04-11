@@ -5,15 +5,27 @@ import { ChatHeader } from "@/components/chat/chat-header"
 import { MessageList } from "@/components/chat/message-list"
 import { MessageInput } from "@/components/chat/message-input"
 import { SourceDetailModal } from "@/components/source-detail-modal"
+import { useChatStore } from "@/lib/store/chat-store"
 import type { Source } from "@/lib/types"
 
-export function ChatMain() {
+export interface ChatMainProps {
+  onSourceClick?: (source: Source) => void
+}
+
+export function ChatMain({ onSourceClick: externalSourceClick }: ChatMainProps) {
   const [selectedSource, setSelectedSource] = useState<Source | null>(null)
   const [sourceModalOpen, setSourceModalOpen] = useState(false)
+  const sendMessage = useChatStore((s) => s.sendMessage)
 
   const handleSourceClick = (source: Source) => {
     setSelectedSource(source)
     setSourceModalOpen(true)
+    externalSourceClick?.(source)
+  }
+
+  const handleSuggestionClick = async (suggestion: string) => {
+    // Send message will auto-create conversation if needed
+    await sendMessage(suggestion)
   }
 
   return (
@@ -23,7 +35,7 @@ export function ChatMain() {
     >
       <ChatHeader />
 
-      <MessageList onSourceClick={handleSourceClick} />
+      <MessageList onSourceClick={handleSourceClick} onSuggestionClick={handleSuggestionClick} />
 
       <MessageInput />
 

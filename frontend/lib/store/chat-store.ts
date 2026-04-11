@@ -21,6 +21,7 @@ interface ChatState {
   selectedSources: Source[]
   sidebarOpen: boolean
   isWaitingForResponse: boolean
+  waitingConversationId: string | null
   selectedFolderIds: string[]
   totalDocuments: number
   isLoading: boolean
@@ -62,6 +63,7 @@ export const useChatStore = create<ChatStore>()(
       selectedSources: [],
       sidebarOpen: true,
       isWaitingForResponse: false,
+      waitingConversationId: null,
       selectedFolderIds: [],
       totalDocuments: 0,
       isLoading: false,
@@ -286,14 +288,25 @@ export const useChatStore = create<ChatStore>()(
 
         // Add user message immediately
         set((state) => ({
-          activeConversation: state.activeConversation
-            ? {
-                ...state.activeConversation,
-                messages: [...(state.activeConversation.messages || []), userMessage],
-                updatedAt: new Date(),
-              }
-            : null,
+          activeConversation:
+            state.activeConversation?.id === activeConversation.id
+              ? {
+                  ...state.activeConversation,
+                  messages: [...(state.activeConversation.messages || []), userMessage],
+                  updatedAt: new Date(),
+                }
+              : state.activeConversation,
+          conversations: state.conversations.map((c) =>
+            c.id === activeConversation.id
+              ? {
+                  ...c,
+                  messages: [...(c.messages || []), userMessage],
+                  updatedAt: new Date(),
+                }
+              : c
+          ),
           isWaitingForResponse: true,
+          waitingConversationId: activeConversation.id,
         }))
 
         // Check if this is first message (for title update)
@@ -323,27 +336,35 @@ export const useChatStore = create<ChatStore>()(
           }
 
           set((state) => {
-            const updatedConversation = state.activeConversation
-              ? {
-                  ...state.activeConversation,
-                  messages: [...(state.activeConversation.messages || []), assistantMessage],
-                  updatedAt: new Date(),
-                }
-              : null
+            const updatedActiveConversation =
+              state.activeConversation?.id === activeConversation.id
+                ? {
+                    ...state.activeConversation,
+                    messages: [...(state.activeConversation.messages || []), assistantMessage],
+                    updatedAt: new Date(),
+                  }
+                : state.activeConversation
+
+            const updatedConversations = state.conversations.map((c) =>
+              c.id === activeConversation.id
+                ? {
+                    ...c,
+                    messages: [...(c.messages || []), assistantMessage],
+                    updatedAt: new Date(),
+                  }
+                : c
+            )
 
             // Add new sources to existing ones
             const newSources = assistantMessage.sources || []
             const allSources = [...state.selectedSources, ...newSources]
 
             return {
-              activeConversation: updatedConversation,
-              conversations: updatedConversation
-                ? state.conversations.map((c) =>
-                    c.id === updatedConversation.id ? updatedConversation : c
-                  )
-                : state.conversations,
+              activeConversation: updatedActiveConversation,
+              conversations: updatedConversations,
               selectedSources: allSources,
               isWaitingForResponse: false,
+              waitingConversationId: null,
             }
           })
 
@@ -362,7 +383,7 @@ export const useChatStore = create<ChatStore>()(
             }
           }
         } else {
-          set({ isWaitingForResponse: false })
+          set({ isWaitingForResponse: false, waitingConversationId: null })
           toast.error(`Failed to send message: ${result.error}`)
         }
       },
@@ -451,6 +472,7 @@ export const useChatStore = create<ChatStore>()(
                 )
               : state.conversations,
             isWaitingForResponse: true,
+            waitingConversationId: activeConversation.id,
           }
         })
 
@@ -502,6 +524,7 @@ export const useChatStore = create<ChatStore>()(
                 : state.conversations,
               selectedSources: allSources,
               isWaitingForResponse: false,
+              waitingConversationId: null,
             }
           })
         } else {
@@ -522,6 +545,7 @@ export const useChatStore = create<ChatStore>()(
                   )
                 : state.conversations,
               isWaitingForResponse: false,
+              waitingConversationId: null,
             }
           })
           toast.error(`Failed to regenerate message: ${result.error}`)
@@ -539,6 +563,9 @@ export const selectShowSources = (state: ChatStore) => state.showSources
 export const selectSelectedSources = (state: ChatStore) => state.selectedSources
 export const selectSidebarOpen = (state: ChatStore) => state.sidebarOpen
 export const selectIsWaitingForResponse = (state: ChatStore) => state.isWaitingForResponse
+export const selectIsWaitingForActiveConversation = (state: ChatStore) =>
+  Boolean(state.activeConversation?.id) &&
+  state.waitingConversationId === state.activeConversation?.id
 export const selectSelectedFolderIds = (state: ChatStore) => state.selectedFolderIds
 export const selectIsLoading = (state: ChatStore) => state.isLoading
 export const selectError = (state: ChatStore) => state.error

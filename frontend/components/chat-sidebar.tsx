@@ -180,7 +180,13 @@ interface ConversationItemProps {
   onDelete: () => void
 }
 
-function ConversationItem({ conversation, isActive, onSelect, onRename, onDelete }: ConversationItemProps) {
+function ConversationItem({
+  conversation,
+  isActive,
+  onSelect,
+  onRename,
+  onDelete,
+}: ConversationItemProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(conversation.title)
 
@@ -233,10 +239,15 @@ function ConversationItem({ conversation, isActive, onSelect, onRename, onDelete
           <Button
             variant="ghost"
             size="icon"
-            className="hover:bg-background h-6 w-6 opacity-70 transition-opacity hover:opacity-100 group-hover:opacity-100"
+            aria-label="Conversation actions"
+            className={cn(
+              "hover:bg-background focus-visible:ring-ring data-[state=open]:bg-background h-6 w-6 transition-opacity",
+              "opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 md:data-[state=open]:opacity-100",
+              isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
             onClick={(e) => e.stopPropagation()}
           >
-            <MoreHorizontal className="h-3 w-3" />
+            <MoreHorizontal className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-40">

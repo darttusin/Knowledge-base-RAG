@@ -117,7 +117,7 @@ export function AssistantMessageBubble({
     const preprocessCitations = (content: string) => content.replace(/\r\n/g, "\n")
 
     // Replace [§N] and grouped citations like [§1, §2] with clickable links
-    const contentWithSourceLinks = preprocessCitations(message.content).replace(
+    const contentWithSourceLinks = preprocessCitations(safeStreamingContent).replace(
       /\[(§\d+(?:,\s*§\d+)*)\]/g,
       (match, citationGroup) => {
         const convertedCitations = citationGroup.split(/,\s*/).map((citation: string) => {
@@ -226,7 +226,15 @@ export function AssistantMessageBubble({
             "prose-hr:border-border"
           )}
         >
-          {renderContent()}
+        {message.status === "streaming" && !message.content.trim() ? (
+          <div className="text-muted-foreground flex items-center gap-1 py-1" aria-label="Assistant is typing">
+            <span className="bg-muted-foreground/70 h-1.5 w-1.5 animate-pulse rounded-full [animation-delay:0ms]" />
+            <span className="bg-muted-foreground/70 h-1.5 w-1.5 animate-pulse rounded-full [animation-delay:180ms]" />
+            <span className="bg-muted-foreground/70 h-1.5 w-1.5 animate-pulse rounded-full [animation-delay:360ms]" />
+          </div>
+        ) : (
+          renderContent()
+        )}
         </div>
 
         {/* Sources */}

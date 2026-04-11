@@ -19,6 +19,7 @@ export function MessageList({ onSourceClick, onSuggestionClick }: MessageListPro
   const isWaitingForResponse = useChatStore(selectIsWaitingForActiveConversation)
   const preGeneratedQueries = useChatStore((s) => s.preGeneratedQueries)
   const editMessage = useChatStore((s) => s.editMessage)
+  const regenerateMessage = useChatStore((s) => s.regenerateMessage)
   const scrollRef = useRef<HTMLDivElement>(null)
   const messageGroups = useMessageGroups(conversation)
   const hasStreamingAssistant = Boolean(
@@ -31,7 +32,8 @@ export function MessageList({ onSourceClick, onSuggestionClick }: MessageListPro
       if (scrollRef.current) {
         const scrollArea = scrollRef.current.querySelector("[data-radix-scroll-area-viewport]")
         if (scrollArea) {
-          const distanceToBottom = scrollArea.scrollHeight - scrollArea.scrollTop - scrollArea.clientHeight
+          const distanceToBottom =
+            scrollArea.scrollHeight - scrollArea.scrollTop - scrollArea.clientHeight
           const shouldPinToBottom = isWaitingForResponse || distanceToBottom < 120
           if (!shouldPinToBottom) {
             return
@@ -56,10 +58,7 @@ export function MessageList({ onSourceClick, onSuggestionClick }: MessageListPro
     >
       <div className="p-3 sm:p-4">
         {!conversation?.messages || conversation.messages.length === 0 ? (
-          <ChatEmptyState
-            suggestions={preGeneratedQueries}
-            onSuggestionClick={onSuggestionClick}
-          />
+          <ChatEmptyState suggestions={preGeneratedQueries} onSuggestionClick={onSuggestionClick} />
         ) : (
           <div className="mx-auto max-w-3xl space-y-4 sm:space-y-6">
             {messageGroups.map((group) => (
@@ -69,6 +68,7 @@ export function MessageList({ onSourceClick, onSuggestionClick }: MessageListPro
                 responses={group.responses}
                 onSourceClick={onSourceClick}
                 onEditMessage={editMessage}
+                onRegenerateMessage={regenerateMessage}
               />
             ))}
             {isWaitingForResponse && !hasStreamingAssistant && (

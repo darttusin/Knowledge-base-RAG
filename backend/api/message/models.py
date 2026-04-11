@@ -11,6 +11,7 @@ class MessageFeedbackEnum(str, Enum):
 class SendMessage(BaseModel):
     dialogue_id: int
     message: str
+    parent_message_id: int | None = None
 
 
 class CodeExecution(BaseModel):
@@ -34,6 +35,7 @@ class SourceReference(BaseModel):
 
 class MessageResponse(BaseModel):
     message_id: int
+    parent_message_id: int | None = None
     user_message: str
     assistant_response: str
     sources: list[SourceReference]

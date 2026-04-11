@@ -63,6 +63,7 @@ export interface BackendSourceReference {
  */
 export interface BackendDialogueMessage {
   message_id: number
+  parent_message_id?: number | null
   user_message: string
   assistant_response: string | null
   sources: BackendSourceReference[] | null
@@ -123,10 +124,14 @@ export function adaptSourcesList(backendList: BackendSourcesList) {
  * Convert backend dialogue message to frontend message
  */
 export function adaptDialogueMessage(message: BackendDialogueMessage) {
+  const parentUserMessageId = message.parent_message_id
+    ? `${message.parent_message_id}-user`
+    : undefined
+
   if (!message.assistant_response) {
     // User message only (shouldn't happen normally)
     return {
-      id: message.message_id.toString(),
+      id: parentUserMessageId || `${message.message_id}-user`,
       role: "user" as const,
       content: message.user_message,
       timestamp: new Date(message.created_at),
@@ -134,17 +139,32 @@ export function adaptDialogueMessage(message: BackendDialogueMessage) {
   }
 
   // Convert sources from BackendSourceReference to Source objects
-  const sources = message.sources?.map((sourceRef, idx) => ({
-    id: `source-${message.message_id}-${idx}`,
-    title: sourceRef.document_name,
-    content: sourceRef.chunk_text,
-    relevance: sourceRef.relevance_score,
-    type: "document" as const,
-    documentId: sourceRef.source_id.toString(),
-    folderPath: sourceRef.folder_path || undefined,
-  })) || undefined
+  const sources =
+    message.sources?.map((sourceRef, idx) => ({
+      id: `source-${message.message_id}-${idx}`,
+      title: sourceRef.document_name,
+      content: sourceRef.chunk_text,
+      relevance: sourceRef.relevance_score,
+      type: "document" as const,
+      documentId: sourceRef.source_id.toString(),
+      folderPath: sourceRef.folder_path || undefined,
+    })) || undefined
 
-  // Return both user and assistant messages
+  // Regenerated versions are linked to existing user message via parent_message_id.
+  // Do not duplicate user bubbles for them.
+  if (parentUserMessageId) {
+    return {
+      id: message.message_id.toString(),
+      role: "assistant" as const,
+      content: message.assistant_response,
+      sources,
+      parentMessageId: parentUserMessageId,
+      timestamp: new Date(message.created_at),
+      feedback: message.feedback as "like" | "dislike" | undefined,
+    }
+  }
+
+  // Regular first response: return both user and assistant messages
   return [
     {
       id: `${message.message_id}-user`,

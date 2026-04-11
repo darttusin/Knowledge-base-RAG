@@ -1,0 +1,261 @@
+"""RAG service for question answering with context retrieval."""
+
+import sys
+from pathlib import Path
+
+# Add parent directories to path for importing rag and outlier_detection modules
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root / "rag"))
+sys.path.insert(0, str(project_root / "outlier-detection"))
+
+from typing import Optional
+from dataclasses import dataclass
+
+from rag import (
+    ChatModel,
+    Settings as RagSettings,
+    answer,
+    create_chat_model,
+    create_embed_model,
+    create_reranker,
+)
+from rag.retriever import retrieve_with_query_transform, retrieve_with_rerank, retrieve
+from rag.vectorstore import create_collection
+from rag.models import RetrievedChunk
+
+try:
+    from topic_classifier import TopicClassifier
+    OUTLIER_DETECTION_AVAILABLE = True
+except ImportError:
+    OUTLIER_DETECTION_AVAILABLE = False
+    TopicClassifier = None
+
+
+@dataclass
+class RagResponse:
+    """Response from RAG system."""
+    answer: str
+    chunks: list[RetrievedChunk]
+    is_on_topic: bool = True
+    topic_confidence: float = 1.0
+
+
+class RagService:
+    """Service for RAG question answering with outlier detection."""
+
+    def __init__(
+        self,
+        rag_settings: RagSettings,
+        classifier_path: Optional[Path] = None,
+        enable_outlier_detection: bool = True,
+    ):
+        """Initialize RAG service.
+
+        Args:
+            rag_settings: RAG configuration settings
+            classifier_path: Path to saved topic classifier model
+            enable_outlier_detection: Whether to use outlier detection
+        """
+        self.settings = rag_settings
+        self.enable_outlier_detection = enable_outlier_detection and OUTLIER_DETECTION_AVAILABLE
+
+        # Initialize models
+        self.chat_model: Optional[ChatModel] = None
+        self.embed_model = None
+        self.reranker = None
+        self.collection = None
+        self.topic_classifier: Optional[TopicClassifier] = None
+
+        # Load models
+        self._load_models(classifier_path)
+
+    def _load_models(self, classifier_path: Optional[Path] = None):
+        """Load all required models."""
+        print("Loading RAG models...")
+
+        # Create LLM model
+        self.chat_model = create_chat_model(self.settings)
+        print(f"✓ Loaded chat model: {self.settings.llm_model_generation}")
+
+        # Create embedding model
+        self.embed_model = create_embed_model(self.settings)
+        print(f"✓ Loaded embedding model: {self.settings.embedding_model}")
+
+        # Create reranker
+        self.reranker = create_reranker(self.settings)
+        print(f"✓ Loaded reranker: {self.settings.rerank_model}")
+
+        # Create/load ChromaDB collection
+        self.collection = create_collection(
+            self.settings.chroma_path,
+            self.settings.chroma_collection
+        )
+        print(f"✓ Loaded ChromaDB collection: {self.settings.chroma_collection}")
+
+        # Load topic classifier if available
+        if self.enable_outlier_detection and classifier_path and classifier_path.exists():
+            self.topic_classifier = TopicClassifier.load(classifier_path)
+            print(f"✓ Loaded topic classifier from: {classifier_path}")
+        elif self.enable_outlier_detection:
+            print("⚠ Outlier detection enabled but no classifier found")
+
+    def check_topic(self, question: str) -> tuple[bool, float]:
+        """Check if question is on-topic.
+
+        Args:
+            question: User question to check
+
+        Returns:
+            Tuple of (is_on_topic, confidence_score)
+        """
+        if not self.topic_classifier:
+            return True, 1.0
+
+        result = self.topic_classifier.predict(question)
+        is_on_topic = result.labels[0] == 1
+        confidence = abs(float(result.scores[0]))
+
+        return is_on_topic, confidence
+
+    def retrieve_chunks(
+        self,
+        question: str,
+        strategy: str = "query_transform",
+        n_results: int = None,
+    ) -> list[RetrievedChunk]:
+        """Retrieve relevant document chunks.
+
+        Args:
+            question: User question
+            strategy: Retrieval strategy - "basic", "rerank", or "query_transform"
+            n_results: Number of results to return (uses settings.top_k if None)
+
+        Returns:
+            List of retrieved chunks
+        """
+        if n_results is None:
+            n_results = self.settings.top_k
+
+        if strategy == "query_transform":
+            chunks = retrieve_with_query_transform(
+                collection=self.collection,
+                embed_model=self.embed_model,
+                reranker=self.reranker,
+                llm=self.chat_model,
+                query=question,
+                n_results=n_results,
+            )
+        elif strategy == "rerank":
+            chunks = retrieve_with_rerank(
+                collection=self.collection,
+                embed_model=self.embed_model,
+                reranker=self.reranker,
+                query=question,
+                n_results=n_results,
+            )
+        else:  # basic
+            chunks = retrieve(
+                collection=self.collection,
+                embed_model=self.embed_model,
+                query=question,
+                n_results=n_results,
+            )
+
+        return chunks
+
+    def answer_question(
+        self,
+        question: str,
+        strategy: str = "rerank",
+        check_topic: bool = True,
+        reject_off_topic: bool = False,
+    ) -> RagResponse:
+        """Answer question using RAG.
+
+        Args:
+            question: User question
+            strategy: Retrieval strategy - "basic", "rerank", or "query_transform"
+            check_topic: Whether to check if question is on-topic
+            reject_off_topic: Whether to reject off-topic questions
+
+        Returns:
+            RagResponse with answer, chunks, and topic information
+        """
+        # Check topic if enabled
+        is_on_topic = True
+        topic_confidence = 1.0
+
+        if check_topic and self.topic_classifier:
+            is_on_topic, topic_confidence = self.check_topic(question)
+
+            if not is_on_topic and reject_off_topic:
+                return RagResponse(
+                    answer="I can only answer questions about PyTorch. Your question appears to be off-topic.",
+                    chunks=[],
+                    is_on_topic=False,
+                    topic_confidence=topic_confidence,
+                )
+
+        # Retrieve relevant chunks
+        chunks = self.retrieve_chunks(question, strategy=strategy)
+
+        # Generate answer
+        answer_text = answer(self.chat_model, question, chunks)
+
+        return RagResponse(
+            answer=answer_text,
+            chunks=chunks,
+            is_on_topic=is_on_topic,
+            topic_confidence=topic_confidence,
+        )
+
+
+# Global service instance (will be initialized in lifespan)
+_rag_service: Optional[RagService] = None
+
+
+def get_rag_service() -> RagService:
+    """Get global RAG service instance.
+
+    Returns:
+        Initialized RagService
+
+    Raises:
+        RuntimeError: If service not initialized
+    """
+    if _rag_service is None:
+        raise RuntimeError("RAG service not initialized. Call init_rag_service() first.")
+    return _rag_service
+
+
+def init_rag_service(
+    rag_settings: RagSettings,
+    classifier_path: Optional[Path] = None,
+    enable_outlier_detection: bool = True,
+) -> RagService:
+    """Initialize global RAG service.
+
+    Args:
+        rag_settings: RAG configuration
+        classifier_path: Path to topic classifier model
+        enable_outlier_detection: Whether to enable outlier detection
+
+    Returns:
+        Initialized RagService
+    """
+    global _rag_service
+    _rag_service = RagService(
+        rag_settings=rag_settings,
+        classifier_path=classifier_path,
+        enable_outlier_detection=enable_outlier_detection,
+    )
+    return _rag_service
+
+
+def shutdown_rag_service():
+    """Shutdown RAG service and cleanup resources."""
+    global _rag_service
+    if _rag_service:
+        # Cleanup if needed
+        _rag_service = None
+        print("✓ RAG service shutdown")

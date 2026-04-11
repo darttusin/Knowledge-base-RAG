@@ -58,20 +58,11 @@ Title:"""
         return " ".join(words) if words else "New conversation"
 
     try:
+        # Use chat model directly for title generation
         response = rag_service.chat_model.invoke(
-            [{"role": "user", "content": prompt}], max_tokens=24, temperature=0.2
+            [{"role": "user", "content": prompt}], max_tokens=20, temperature=0.7
         )
-        if not response:
-            return _fallback_title()
-
-        # Normalize model output: first line only, remove wrappers/prefixes.
-        title = response.strip().splitlines()[0].strip()
-        title = title.removeprefix("Title:").strip().strip("\"'`")
-
-        # Remove markdown heading/punctuation noise.
-        while title.startswith("#"):
-            title = title[1:].strip()
-        title = title.strip(" .,!?:;-")
+        title = response.strip().strip("\"'")
 
         if not title:
             return _fallback_title()

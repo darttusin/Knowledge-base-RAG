@@ -1,6 +1,7 @@
 // Base API client with error handling and request utilities
 
 import type { ApiResult } from "@/types/api"
+import { getAuthHeader } from "@/lib/auth/token"
 
 // ============================================
 // Configuration
@@ -38,14 +39,35 @@ function buildUrl(
   endpoint: string,
   params?: Record<string, string | number | boolean | undefined>
 ): string {
-  const url = new URL(
-    endpoint,
-    API_BASE_URL.startsWith("http") ? API_BASE_URL : window.location.origin
-  )
-
-  if (!endpoint.startsWith("http")) {
-    url.pathname = `${API_BASE_URL}${endpoint}`.replace(/\/+/g, "/")
+  // Если endpoint уже полный URL, используем его
+  if (endpoint.startsWith("http")) {
+    const url = new URL(endpoint)
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          url.searchParams.append(key, String(value))
+        }
+      })
+    }
+    return url.toString()
   }
+
+  // Строим URL из base + endpoint
+  let baseUrl: string
+  if (API_BASE_URL.startsWith("http")) {
+    // API_BASE_URL уже полный URL
+    baseUrl = API_BASE_URL
+  } else {
+    // API_BASE_URL относительный путь
+    baseUrl = window.location.origin + API_BASE_URL
+  }
+
+  // Убираем trailing slash из base и leading slash из endpoint, затем соединяем
+  const cleanBase = baseUrl.replace(/\/$/, "")
+  const cleanEndpoint = endpoint.replace(/^\//, "")
+  const fullUrl = `${cleanBase}/${cleanEndpoint}`
+
+  const url = new URL(fullUrl)
 
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
@@ -78,6 +100,11 @@ async function handleResponse<T>(response: Response): Promise<T> {
     throw new ApiRequestError(errorMessage, errorCode, response.status)
   }
 
+  // Handle 204 No Content responses
+  if (response.status === 204 || response.headers.get("content-length") === "0") {
+    return {} as T
+  }
+
   if (contentType?.includes("application/json")) {
     return response.json()
   }
@@ -97,14 +124,23 @@ async function request<T>(endpoint: string, config: RequestConfig = {}): Promise
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeout)
 
+  // Build headers with authentication
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+    ...fetchConfig.headers,
+  }
+
+  // Add JWT token if available
+  const authHeader = getAuthHeader()
+  if (authHeader) {
+    headers["Authorization"] = authHeader
+  }
+
   try {
     const response = await fetch(url, {
       ...fetchConfig,
       signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...fetchConfig.headers,
-      },
+      headers,
     })
 
     return handleResponse<T>(response)
@@ -210,10 +246,17 @@ export async function streamRequest<T>(
 ): Promise<void> {
   const url = buildUrl(endpoint)
 
+  // Build headers with authentication
+  const headers: HeadersInit = { "Content-Type": "application/json" }
+  const authHeader = getAuthHeader()
+  if (authHeader) {
+    headers["Authorization"] = authHeader
+  }
+
   try {
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(data),
     })
 
@@ -317,6 +360,13 @@ export async function uploadFile<T>(
     })
 
     xhr.open("POST", url)
+
+    // Add JWT token if available
+    const authHeader = getAuthHeader()
+    if (authHeader) {
+      xhr.setRequestHeader("Authorization", authHeader)
+    }
+
     xhr.send(formData)
   })
 }

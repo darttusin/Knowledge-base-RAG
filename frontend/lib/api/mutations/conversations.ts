@@ -1,88 +1,100 @@
 // Conversation mutations (POST/PUT/DELETE requests)
 
-import { api, safeRequest, streamRequest, type StreamCallbacks } from "../client"
-import type {
-  ApiResult,
-  ConversationResponse,
-  CreateConversationRequest,
-  UpdateConversationRequest,
-  SendMessageRequest,
-  SendMessageResponse,
-  EditMessageRequest,
-  StreamChunk,
-} from "@/types/api"
+import { api, safeRequest } from "../client"
+import { adaptDialogueToConversation, type BackendDialogue, type BackendMessage } from "../adapters"
+import type { ApiResult, ConversationListItem } from "@/types/api"
 
 const ENDPOINTS = {
-  create: "/conversations",
-  update: (id: string) => `/conversations/${id}`,
-  delete: (id: string) => `/conversations/${id}`,
-  sendMessage: "/messages",
-  editMessage: (id: string) => `/messages/${id}`,
-  deleteMessage: (id: string) => `/messages/${id}`,
-  streamMessage: "/messages/stream",
+  create: "/api/dialogue",
+  update: (id: string) => `/api/dialogue/${id}`,
+  delete: (id: string) => `/api/dialogue/${id}`,
+  sendMessage: "/api/message",
+}
+
+export interface SendMessageRequest {
+  dialogue_id: number
+  message: string
+}
+
+export interface SendMessageResponse {
+  userMessage: string
+  assistantMessage: string
+  messageId: string
+  sources: string[]
 }
 
 /**
  * Create a new conversation
  */
 export async function createConversation(
-  request: CreateConversationRequest
-): Promise<ApiResult<ConversationResponse>> {
-  return safeRequest(() => api.post<ConversationResponse>(ENDPOINTS.create, request))
+  name: string = "New conversation"
+): Promise<ApiResult<ConversationListItem>> {
+  const result = await safeRequest(() =>
+    api.post<BackendDialogue>(ENDPOINTS.create, { name })
+  )
+
+  if (!result.success) {
+    return result
+  }
+
+  return {
+    success: true,
+    data: adaptDialogueToConversation(result.data),
+  }
 }
 
 /**
- * Update conversation (e.g., rename)
+ * Update conversation (rename)
  */
 export async function updateConversation(
   id: string,
-  request: UpdateConversationRequest
-): Promise<ApiResult<ConversationResponse>> {
-  return safeRequest(() => api.put<ConversationResponse>(ENDPOINTS.update(id), request))
+  name: string
+): Promise<ApiResult<{ success: boolean }>> {
+  const result = await safeRequest(async () => {
+    await api.put(ENDPOINTS.update(id), { name })
+    return { success: true }
+  })
+
+  return result
 }
 
 /**
  * Delete a conversation
  */
 export async function deleteConversation(id: string): Promise<ApiResult<{ success: boolean }>> {
-  return safeRequest(() => api.delete<{ success: boolean }>(ENDPOINTS.delete(id)))
+  const result = await safeRequest(async () => {
+    await api.delete(ENDPOINTS.delete(id))
+    return { success: true }
+  })
+
+  return result
 }
 
 /**
- * Send a message (non-streaming)
+ * Send a message
  */
 export async function sendMessage(
-  request: SendMessageRequest
+  dialogueId: number,
+  message: string
 ): Promise<ApiResult<SendMessageResponse>> {
-  return safeRequest(() => api.post<SendMessageResponse>(ENDPOINTS.sendMessage, request))
-}
-
-/**
- * Send a message with streaming response
- */
-export function sendMessageStream(
-  request: SendMessageRequest,
-  callbacks: StreamCallbacks<StreamChunk>
-): Promise<void> {
-  return streamRequest<StreamChunk>(ENDPOINTS.streamMessage, request, callbacks)
-}
-
-/**
- * Edit an existing message
- */
-export async function editMessage(
-  request: EditMessageRequest
-): Promise<ApiResult<SendMessageResponse>> {
-  return safeRequest(() =>
-    api.put<SendMessageResponse>(ENDPOINTS.editMessage(request.messageId), {
-      content: request.content,
+  const result = await safeRequest(() =>
+    api.post<BackendMessage>(ENDPOINTS.sendMessage, {
+      dialogue_id: dialogueId,
+      message,
     })
   )
-}
 
-/**
- * Delete a message
- */
-export async function deleteMessage(messageId: string): Promise<ApiResult<{ success: boolean }>> {
-  return safeRequest(() => api.delete<{ success: boolean }>(ENDPOINTS.deleteMessage(messageId)))
+  if (!result.success) {
+    return result
+  }
+
+  return {
+    success: true,
+    data: {
+      userMessage: result.data.user_message,
+      assistantMessage: result.data.assistant_response,
+      messageId: result.data.message_id.toString(),
+      sources: result.data.sources,
+    },
+  }
 }

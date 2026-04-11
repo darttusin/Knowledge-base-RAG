@@ -4,6 +4,7 @@ from typing import AsyncGenerator
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.sql import text
 
 from settings import settings
 
@@ -67,6 +68,25 @@ class Message(Base):
     dialogue: Mapped["Dialogue"] = relationship("Dialogue", back_populates="messages")
 
 
+class Folder(Base):
+    __tablename__ = "folders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    path: Mapped[str] = mapped_column(String(1000), nullable=False)
+    parent_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("folders.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
+
+    sources: Mapped[list["Source"]] = relationship(
+        "Source", back_populates="folder", cascade="all, delete-orphan"
+    )
+
+
 class Source(Base):
     __tablename__ = "sources"
 
@@ -74,11 +94,16 @@ class Source(Base):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    folder_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("folders.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     source_type: Mapped[str] = mapped_column(String(10), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
+
+    folder: Mapped["Folder | None"] = relationship("Folder", back_populates="sources")
 
 
 pg_settings = settings.POSTGRES
@@ -97,6 +122,80 @@ engine = create_async_engine(
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        # Create full-text search indexes for sources
+        # Add tsvector columns if they don't exist
+        await conn.execute(text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'sources' AND column_name = 'name_tsvector'
+                ) THEN
+                    ALTER TABLE sources ADD COLUMN name_tsvector tsvector;
+                END IF;
+
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'sources' AND column_name = 'content_tsvector'
+                ) THEN
+                    ALTER TABLE sources ADD COLUMN content_tsvector tsvector;
+                END IF;
+            END $$
+        """))
+
+        # Create GIN indexes if they don't exist
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_sources_name_fts ON sources USING GIN(name_tsvector)"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_sources_content_fts ON sources USING GIN(content_tsvector)"
+        ))
+
+        # Create or replace trigger functions
+        await conn.execute(text("""
+            CREATE OR REPLACE FUNCTION sources_name_tsvector_update() RETURNS trigger AS $$
+            BEGIN
+                NEW.name_tsvector := to_tsvector('english', COALESCE(regexp_replace(NEW.name, '[._-]', ' ', 'g'), ''));
+                RETURN NEW;
+            END
+            $$ LANGUAGE plpgsql
+        """))
+
+        await conn.execute(text("""
+            CREATE OR REPLACE FUNCTION sources_content_tsvector_update() RETURNS trigger AS $$
+            BEGIN
+                NEW.content_tsvector := to_tsvector('english', COALESCE(NEW.content, ''));
+                RETURN NEW;
+            END
+            $$ LANGUAGE plpgsql
+        """))
+
+        # Create triggers
+        await conn.execute(text("DROP TRIGGER IF EXISTS sources_name_tsvector_trigger ON sources"))
+        await conn.execute(text("""
+            CREATE TRIGGER sources_name_tsvector_trigger
+                BEFORE INSERT OR UPDATE ON sources
+                FOR EACH ROW EXECUTE FUNCTION sources_name_tsvector_update()
+        """))
+
+        await conn.execute(text("DROP TRIGGER IF EXISTS sources_content_tsvector_trigger ON sources"))
+        await conn.execute(text("""
+            CREATE TRIGGER sources_content_tsvector_trigger
+                BEFORE INSERT OR UPDATE ON sources
+                FOR EACH ROW EXECUTE FUNCTION sources_content_tsvector_update()
+        """))
+
+        # Update existing rows
+        await conn.execute(text("""
+            UPDATE sources SET name_tsvector = to_tsvector('english', COALESCE(regexp_replace(name, '[._-]', ' ', 'g'), ''))
+            WHERE name_tsvector IS NULL
+        """))
+
+        await conn.execute(text("""
+            UPDATE sources SET content_tsvector = to_tsvector('english', COALESCE(content, ''))
+            WHERE content_tsvector IS NULL
+        """))
 
 
 async def close_db():

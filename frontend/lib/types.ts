@@ -13,6 +13,7 @@ export interface Message {
   isEdited?: boolean
   editHistory?: MessageVersion[]
   parentMessageId?: string
+  feedback?: "like" | "dislike"
 }
 
 export interface Source {
@@ -31,7 +32,7 @@ export interface Source {
 export interface Conversation {
   id: string
   title: string
-  messages: Message[]
+  messages?: Message[] // undefined means not loaded yet, [] means loaded but empty
   createdAt: Date
   updatedAt: Date
 }

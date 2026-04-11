@@ -4,12 +4,14 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Eye, EyeOff, Database, Loader2, Mail, Lock, ArrowRight } from "lucide-react"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { login } from "@/lib/api"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -18,16 +20,25 @@ export default function LoginPage() {
   const [email, setEmail] = React.useState("")
   const [password, setPassword] = React.useState("")
   const [rememberMe, setRememberMe] = React.useState(false)
+  const [error, setError] = React.useState("")
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    setError("")
 
-    // Simulate login - replace with actual auth logic
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+    // Call real login API
+    const result = await login({ email, password })
+
+    if (result.success) {
+      toast.success("Login successful!")
+      router.push("/")
+    } else {
+      setError(result.error)
+      toast.error(result.error)
+    }
 
     setIsLoading(false)
-    router.push("/")
   }
 
   return (
@@ -169,6 +180,12 @@ export default function LoginPage() {
                   Remember me for 30 days
                 </Label>
               </div>
+
+              {error && (
+                <div className="bg-destructive/10 text-destructive rounded-lg px-4 py-3 text-sm">
+                  {error}
+                </div>
+              )}
 
               <Button type="submit" className="h-11 w-full text-base" disabled={isLoading}>
                 {isLoading ? (

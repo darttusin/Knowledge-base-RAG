@@ -20,7 +20,6 @@ import {
   Edit2,
   Database,
   Settings,
-  HelpCircle,
   ChevronLeft,
   Sparkles,
 } from "lucide-react"
@@ -164,13 +163,6 @@ export function ChatSidebar() {
             Settings
           </Button>
         </Link>
-        <Button
-          variant="ghost"
-          className="text-muted-foreground hover:text-foreground hover:bg-sidebar-accent h-9 w-full justify-start gap-2"
-        >
-          <HelpCircle className="h-4 w-4" />
-          Help
-        </Button>
       </div>
     </div>
   )

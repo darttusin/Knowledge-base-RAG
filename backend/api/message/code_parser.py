@@ -17,7 +17,7 @@ async def execute_code_block(code: str, executor_url: str, timeout: int = 10) ->
                 executor_url, json={"code": code, "timeout": 5}
             )
             response.raise_for_status()
-            return await response.json()
+            return response.json()  # .json() is synchronous in httpx
 
     except httpx.RequestError as e:
         return {

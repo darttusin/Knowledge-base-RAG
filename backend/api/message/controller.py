@@ -40,7 +40,7 @@ async def send_message(
                 RAG_API_URL, json={"text": data.message, "tg_user_id": user_id}
             )
             rag_response.raise_for_status()
-            rag_data = await rag_response.json()
+            rag_data = rag_response.json()  # .json() is synchronous in httpx
 
             assistant_response = rag_data.get("response", "")
 

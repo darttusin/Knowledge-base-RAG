@@ -1,11 +1,10 @@
 "use client"
 
-import { Suspense, useState, useEffect, useRef } from "react"
+import { Suspense, useState, useEffect, useRef, useCallback } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Dialog,
   DialogContent,
@@ -22,17 +21,18 @@ import {
   DocumentStats,
   FolderTree,
   FolderBreadcrumb,
+  MarkdownPreview,
 } from "@/components/documents"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { useDocuments, type Document } from "@/hooks/useDocuments"
-import { useSearch } from "@/hooks/useSearch"
 import { useDateFormat } from "@/hooks/useDateFormat"
+import type { SearchIn } from "@/lib/api"
 import {
   useFolderStore,
   selectCurrentFolder,
   type Folder,
 } from "@/lib/store/folder-store"
-import { ArrowLeft, FileText, Search, Plus, FolderOpen, Download } from "lucide-react"
+import { ArrowLeft, FileText, Search, Plus, FolderOpen, Download, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import Loading from "./loading"
 
@@ -45,9 +45,15 @@ export default function DocumentsPage() {
   const folders = useFolderStore((s) => s.folders)
   const currentFolderId = useFolderStore((s) => s.currentFolderId)
   const currentFolder = useFolderStore(selectCurrentFolder)
+  const loadFolders = useFolderStore((s) => s.loadFolders)
   const updateFolder = useFolderStore((s) => s.updateFolder)
   const deleteFolder = useFolderStore((s) => s.deleteFolder)
   const setCurrentFolder = useFolderStore((s) => s.setCurrentFolder)
+
+  // Load folders on mount
+  useEffect(() => {
+    loadFolders()
+  }, [loadFolders])
 
   const {
     documents,
@@ -58,6 +64,14 @@ export default function DocumentsPage() {
     isDragging,
     fileInputRef,
     totalSize,
+    totalCount,
+    hasMore,
+    isLoadingMore,
+    loadMore,
+    searchQuery,
+    setSearchQuery,
+    searchIn,
+    setSearchIn,
     uploadFiles,
     deleteDocument,
     renameDocument,
@@ -110,11 +124,38 @@ export default function DocumentsPage() {
   // Get child folders of current folder
   const childFolders = folders.filter((f) => f.parentId === currentFolderId)
 
-  const { searchQuery, setSearchQuery, filteredItems } = useSearch(documents, (doc, query) =>
-    doc.name.toLowerCase().includes(query)
-  )
-
   const { formatRelativeDate, formatFileSize } = useDateFormat()
+
+  // Search mode options
+  const searchModes: { value: SearchIn; label: string }[] = [
+    { value: "both", label: "All" },
+    { value: "name", label: "Name" },
+    { value: "content", label: "Content" },
+  ]
+
+  // Infinite scroll handler
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
+
+  const handleScroll = useCallback(() => {
+    const scrollArea = scrollAreaRef.current
+    if (!scrollArea || isLoadingMore || !hasMore) return
+
+    const scrollPosition = scrollArea.scrollTop + scrollArea.clientHeight
+    const scrollHeight = scrollArea.scrollHeight
+
+    // Load more when 80% scrolled
+    if (scrollPosition >= scrollHeight * 0.8) {
+      loadMore()
+    }
+  }, [isLoadingMore, hasMore, loadMore])
+
+  useEffect(() => {
+    const scrollArea = scrollAreaRef.current
+    if (!scrollArea) return
+
+    scrollArea.addEventListener('scroll', handleScroll)
+    return () => scrollArea.removeEventListener('scroll', handleScroll)
+  }, [handleScroll])
 
   // Folder actions
   const handleRenameFolder = (folder: Folder) => {
@@ -196,7 +237,7 @@ export default function DocumentsPage() {
             <div>
               <h1 className="text-foreground text-xl font-semibold">Documents</h1>
               <p className="text-muted-foreground text-sm">
-                {currentFolder?.name || "All Documents"} - {documents.length} documents
+                {currentFolder?.name || "All Documents"} - {totalCount} documents
               </p>
             </div>
           </div>
@@ -220,7 +261,7 @@ export default function DocumentsPage() {
         {/* Main Content */}
         <div className="flex flex-1 overflow-hidden">
           {/* Folder Sidebar */}
-          <div className="border-border/50 w-64 shrink-0 border-r">
+          <div className="border-border/50 flex w-64 shrink-0 flex-col border-r overflow-hidden">
             <div className="flex h-full flex-col p-4">
               <FolderTree />
             </div>
@@ -231,7 +272,7 @@ export default function DocumentsPage() {
             <div className="mx-auto flex h-full max-w-4xl flex-col">
             {/* Stats */}
             <DocumentStats
-              documentCount={documents.length}
+              documentCount={totalCount}
               totalSize={formatFileSize(totalSize)}
               lastUpload={
                 documents.length > 0 ? formatRelativeDate(documents[0].uploadedAt) : "N/A"
@@ -251,7 +292,7 @@ export default function DocumentsPage() {
             />
 
             {/* Search */}
-            <div className="mb-4" role="search">
+            <div className="mb-4 space-y-2" role="search">
               <div className="relative">
                 <Search
                   className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
@@ -265,11 +306,32 @@ export default function DocumentsPage() {
                   aria-label="Search documents"
                 />
               </div>
+              {/* Search mode selector */}
+              <div className="flex gap-1">
+                {searchModes.map((mode) => (
+                  <Button
+                    key={mode.value}
+                    variant={searchIn === mode.value ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSearchIn(mode.value)}
+                    className="text-xs"
+                  >
+                    {mode.label}
+                  </Button>
+                ))}
+              </div>
             </div>
 
+            {/* Documents Count */}
+            {totalCount > 0 && (
+              <div className="mb-2 text-muted-foreground text-sm">
+                Loaded {documents.length} of {totalCount} documents
+              </div>
+            )}
+
             {/* Documents List */}
-            <ScrollArea className="flex-1" role="region" aria-label="Documents list">
-              {!searchQuery && childFolders.length === 0 && filteredItems.length === 0 ? (
+            <div ref={scrollAreaRef} className="flex-1 overflow-y-auto" role="region" aria-label="Documents list">
+              {!searchQuery && childFolders.length === 0 && documents.length === 0 ? (
                 <EmptyState
                   icon={FolderOpen}
                   title="No documents yet"
@@ -277,11 +339,11 @@ export default function DocumentsPage() {
                   className="py-16"
                   iconClassName="h-16 w-16 rounded-2xl mb-4"
                 />
-              ) : searchQuery && filteredItems.length === 0 ? (
+              ) : searchQuery && documents.length === 0 ? (
                 <EmptyState
                   icon={FolderOpen}
                   title="No documents found"
-                  description="Try a different search term"
+                  description="Try a different search term or mode"
                   className="py-16"
                   iconClassName="h-16 w-16 rounded-2xl mb-4"
                 />
@@ -300,7 +362,7 @@ export default function DocumentsPage() {
                     ))}
 
                   {/* Then show documents */}
-                  {filteredItems.map((doc) => (
+                  {documents.map((doc) => (
                     <DocumentRow
                       key={doc.id}
                       document={doc}
@@ -314,14 +376,29 @@ export default function DocumentsPage() {
                   ))}
                 </div>
               )}
-            </ScrollArea>
+
+              {/* Loading indicator */}
+              {isLoadingMore && (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">Loading more...</span>
+                </div>
+              )}
+
+              {/* End of list indicator */}
+              {!hasMore && documents.length > 0 && (
+                <div className="text-center py-6 text-sm text-muted-foreground">
+                  All documents loaded
+                </div>
+              )}
+            </div>
             </div>
           </div>
         </div>
 
         {/* Preview Dialog */}
         <Dialog open={previewOpen} onOpenChange={closePreview}>
-          <DialogContent className="max-h-[80vh] max-w-2xl">
+          <DialogContent className="max-w-[98vw] w-[1800px]">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <FileText className="h-5 w-5" />
@@ -332,11 +409,17 @@ export default function DocumentsPage() {
                 {selectedDocument && formatRelativeDate(selectedDocument.uploadedAt)}
               </DialogDescription>
             </DialogHeader>
-            <ScrollArea className="mt-4 max-h-[50vh]">
-              <pre className="text-foreground bg-muted/30 rounded-xl p-4 font-mono text-sm whitespace-pre-wrap">
-                {selectedDocument?.content}
-              </pre>
-            </ScrollArea>
+            <div className="mt-4 h-[75vh] w-full overflow-auto">
+              {selectedDocument?.type === "md" ? (
+                <div className="bg-muted/30 rounded-xl p-8">
+                  <MarkdownPreview content={selectedDocument.content} />
+                </div>
+              ) : (
+                <pre className="text-foreground bg-muted/30 rounded-xl p-6 font-mono text-sm whitespace-pre-wrap break-words">
+                  {selectedDocument?.content}
+                </pre>
+              )}
+            </div>
             <DialogFooter>
               <Button variant="outline" onClick={closePreview} className="bg-transparent">
                 Close

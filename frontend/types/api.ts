@@ -27,6 +27,7 @@ export interface PaginationParams {
 export interface PaginatedResponse<T> {
   items: T[]
   total: number
+  totalSize?: number
   page: number
   limit: number
   hasMore: boolean
@@ -79,6 +80,7 @@ export interface ConversationListItem {
   messageCount: number
   createdAt: string
   updatedAt: string
+  messages?: MessageResponse[] // Populated when fetching single conversation
 }
 
 export interface ConversationResponse {

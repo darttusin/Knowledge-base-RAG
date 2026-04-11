@@ -12,10 +12,11 @@ export function ChatHeader() {
   const conversation = useChatStore((s) => s.activeConversation)
   const showSources = useChatStore((s) => s.showSources)
   const sidebarOpen = useChatStore((s) => s.sidebarOpen)
+  const totalDocuments = useChatStore((s) => s.totalDocuments)
   const toggleSources = useChatStore((s) => s.toggleSources)
   const toggleSidebar = useChatStore((s) => s.toggleSidebar)
 
-  const hasMessages = (conversation?.messages.length ?? 0) > 0
+  const hasMessages = (conversation?.messages?.length ?? 0) > 0
 
   return (
     <header
@@ -40,7 +41,9 @@ export function ChatHeader() {
           </h1>
           <p className="text-muted-foreground flex items-center gap-1 text-xs">
             <span className="bg-chart-5 inline-block h-1.5 w-1.5 shrink-0 rounded-full"></span>
-            <span className="truncate">3 documents loaded</span>
+            <span className="truncate">
+              {totalDocuments} {totalDocuments === 1 ? "document" : "documents"} loaded
+            </span>
           </p>
         </div>
       </div>

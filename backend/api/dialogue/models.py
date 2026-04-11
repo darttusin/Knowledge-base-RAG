@@ -22,12 +22,21 @@ class UpdateDialogue(BaseModel):
     name: str | None = None
 
 
+class MessageResponse(BaseModel):
+    message_id: int
+    user_message: str
+    assistant_response: str | None
+    feedback: str | None
+    created_at: str
+
+
 class DialogueResponse(BaseModel):
     dialogue_id: int
     name: str
     created_at: str
     updated_at: str
     pre_generated_queries: list[PreGeneratedQuery]
+    messages: list[MessageResponse]
 
 
 class ShortDialogue(BaseModel):

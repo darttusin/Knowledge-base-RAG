@@ -74,6 +74,7 @@ function FolderNode({ folder, level = 0 }: FolderNodeProps) {
   }
 
   const handleSelect = () => {
+    console.log('Selected folder:', { id: folder.id, name: folder.name, path: folder.path })
     setCurrentFolder(folder.id)
   }
 
@@ -138,15 +139,23 @@ function FolderNode({ folder, level = 0 }: FolderNodeProps) {
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
-            <span className="text-foreground flex-1 truncate text-sm font-medium">
+            <span className={cn(
+              "flex-1 truncate text-sm font-medium",
+              folder.documentCount === 0 ? "text-muted-foreground" : "text-foreground"
+            )}>
               {folder.name}
             </span>
           )}
 
-          <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-            <span className="text-muted-foreground text-xs">{folder.documentCount}</span>
+          <div className="ml-auto flex items-center gap-1">
+            <span className={cn(
+              "text-xs",
+              folder.documentCount === 0 ? "text-muted-foreground/50" : "text-muted-foreground"
+            )}>
+              {folder.documentCount}
+            </span>
 
-            {folder.id !== "root" && (
+            {true && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                   <Button
@@ -221,11 +230,13 @@ export function FolderTree() {
   const folders = useFolderStore((s) => s.folders)
   const createFolder = useFolderStore((s) => s.createFolder)
   const currentFolderId = useFolderStore((s) => s.currentFolderId)
+  const setCurrentFolder = useFolderStore((s) => s.setCurrentFolder)
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [newFolderName, setNewFolderName] = useState("")
 
-  const rootFolders = folders.filter((f) => f.id === "root")
+  // Get top-level folders (no parent)
+  const rootFolders = folders.filter((f) => f.parentId === null)
 
   const handleCreateFolder = () => {
     if (newFolderName.trim()) {
@@ -238,8 +249,8 @@ export function FolderTree() {
 
   return (
     <>
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between px-2">
+      <div className="flex h-full flex-col gap-2 overflow-hidden">
+        <div className="flex items-center justify-between px-2 flex-shrink-0">
           <div className="flex items-center gap-2">
             <FolderIcon className="text-muted-foreground h-4 w-4" />
             <span className="text-foreground text-sm font-semibold">Folders</span>
@@ -255,11 +266,33 @@ export function FolderTree() {
           </Button>
         </div>
 
-        <ScrollArea className="flex-1">
-          {rootFolders.map((folder) => (
-            <FolderNode key={folder.id} folder={folder} />
-          ))}
-        </ScrollArea>
+        <div className="flex-1 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="space-y-1 pr-4">
+              {/* All Documents button */}
+              <div
+                className={cn(
+                  "hover:bg-muted/50 group flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors cursor-pointer",
+                  currentFolderId === null && "bg-primary/10 hover:bg-primary/15"
+                )}
+                onClick={() => {
+                  console.log('Selected: All Documents (currentFolderId = null)')
+                  setCurrentFolder(null)
+                }}
+              >
+                <div className="h-5 w-5 shrink-0" />
+                <FileText className="text-muted-foreground h-4 w-4 shrink-0" />
+                <span className="text-foreground flex-1 truncate text-sm font-medium">
+                  All Documents
+                </span>
+              </div>
+
+              {rootFolders.map((folder) => (
+                <FolderNode key={folder.id} folder={folder} />
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
       </div>
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>

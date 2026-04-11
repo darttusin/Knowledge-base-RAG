@@ -46,7 +46,7 @@ export function MessageList({ onSourceClick, onSuggestionClick }: MessageListPro
       aria-live="polite"
     >
       <div className="p-3 sm:p-4">
-        {conversation?.messages.length === 0 ? (
+        {!conversation?.messages || conversation.messages.length === 0 ? (
           <ChatEmptyState onSuggestionClick={onSuggestionClick} />
         ) : (
           <div className="mx-auto max-w-3xl space-y-4 sm:space-y-6">

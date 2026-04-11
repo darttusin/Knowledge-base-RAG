@@ -6,7 +6,7 @@ export interface MessageGroup {
 }
 
 export function useMessageGroups(conversation: Conversation | null): MessageGroup[] {
-  if (!conversation) return []
+  if (!conversation || !conversation.messages) return []
 
   const groups: MessageGroup[] = []
 

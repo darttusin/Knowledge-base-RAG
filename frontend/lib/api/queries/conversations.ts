@@ -1,46 +1,46 @@
 // Conversation queries (GET requests)
 
 import { api, safeRequest } from "../client"
-import type {
-  ApiResult,
-  ConversationListItem,
-  ConversationResponse,
-  PaginatedResponse,
-  PaginationParams,
-} from "@/types/api"
+import { adaptDialogueToConversation, type BackendDialogue } from "../adapters"
+import type { ApiResult, ConversationListItem } from "@/types/api"
 
 const ENDPOINTS = {
-  list: "/conversations",
-  single: (id: string) => `/conversations/${id}`,
+  list: "/api/dialogue",
+  single: (id: string) => `/api/dialogue/${id}`,
 }
 
 /**
- * Get paginated list of conversations
+ * Get list of conversations
  */
-export async function getConversations(
-  params?: PaginationParams
-): Promise<ApiResult<PaginatedResponse<ConversationListItem>>> {
-  return safeRequest(() => api.get<PaginatedResponse<ConversationListItem>>(ENDPOINTS.list, params))
-}
-
-/**
- * Get single conversation with messages
- */
-export async function getConversation(id: string): Promise<ApiResult<ConversationResponse>> {
-  return safeRequest(() => api.get<ConversationResponse>(ENDPOINTS.single(id)))
-}
-
-/**
- * Search conversations by title or content
- */
-export async function searchConversations(
-  query: string,
-  params?: PaginationParams
-): Promise<ApiResult<PaginatedResponse<ConversationListItem>>> {
-  return safeRequest(() =>
-    api.get<PaginatedResponse<ConversationListItem>>(ENDPOINTS.list, {
-      ...params,
-      q: query,
-    })
+export async function getConversations(query?: string): Promise<ApiResult<ConversationListItem[]>> {
+  const result = await safeRequest(() =>
+    api.get<BackendDialogue[]>(ENDPOINTS.list, query ? { query } : undefined)
   )
+
+  if (!result.success) {
+    return result
+  }
+
+  return {
+    success: true,
+    data: result.data.map(adaptDialogueToConversation),
+  }
+}
+
+/**
+ * Get single conversation
+ */
+export async function getConversation(
+  id: string
+): Promise<ApiResult<ConversationListItem>> {
+  const result = await safeRequest(() => api.get<BackendDialogue>(ENDPOINTS.single(id)))
+
+  if (!result.success) {
+    return result
+  }
+
+  return {
+    success: true,
+    data: adaptDialogueToConversation(result.data),
+  }
 }

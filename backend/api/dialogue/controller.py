@@ -1,6 +1,7 @@
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from db import Dialogue
 
@@ -8,6 +9,7 @@ from .models import (
     CreateDialogue,
     DialogueResponse,
     IconsEnum,
+    MessageResponse,
     PreGeneratedQuery,
     ShortDialogue,
     UpdateDialogue,
@@ -41,6 +43,7 @@ async def create_dialogue(
         created_at=new_dialogue.created_at.isoformat(),
         updated_at=new_dialogue.updated_at.isoformat(),
         pre_generated_queries=pre_generated,
+        messages=[],
     )
 
 
@@ -48,7 +51,9 @@ async def get_dialogue(
     dialogue_id: int, user_id: int, db: AsyncSession
 ) -> DialogueResponse:
     result = await db.execute(
-        select(Dialogue).where(Dialogue.id == dialogue_id, Dialogue.user_id == user_id)
+        select(Dialogue)
+        .where(Dialogue.id == dialogue_id, Dialogue.user_id == user_id)
+        .options(selectinload(Dialogue.messages))
     )
     dialogue = result.scalar_one_or_none()
 
@@ -59,12 +64,24 @@ async def get_dialogue(
 
     pre_generated = generate_pre_generated_queries()
 
+    messages = [
+        MessageResponse(
+            message_id=msg.id,
+            user_message=msg.user_message,
+            assistant_response=msg.assistant_response,
+            feedback=msg.feedback,
+            created_at=msg.created_at.isoformat(),
+        )
+        for msg in dialogue.messages
+    ]
+
     return DialogueResponse(
         dialogue_id=dialogue.id,
         name=dialogue.name,
         created_at=dialogue.created_at.isoformat(),
         updated_at=dialogue.updated_at.isoformat(),
         pre_generated_queries=pre_generated,
+        messages=messages,
     )
 
 

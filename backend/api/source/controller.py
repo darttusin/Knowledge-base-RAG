@@ -1,14 +1,17 @@
 import math
+import httpx
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from db import Source
+from db import Source, Folder
 
 from .models import SourceContent, SourceForList, SourcesList, SourceType
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
+RAG_API_URL = "http://localhost:8000"
 
 
 async def upload_source(
@@ -59,37 +62,146 @@ async def upload_source(
     await db.commit()
     await db.refresh(new_source)
 
+    # Вызываем API для эмбеддинга документа
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            embed_response = await client.post(
+                f"{RAG_API_URL}/embed/document",
+                json={
+                    "document_id": new_source.id,
+                    "document_name": new_source.name,
+                    "content": content_str,
+                    "user_id": user_id,
+                    "chunk_size": 500,
+                    "overlap": 50
+                }
+            )
+            embed_response.raise_for_status()
+            # Можно логировать результат если нужно
+            # embed_data = embed_response.json()
+    except Exception as e:
+        # Если эмбеддинг не удался, логируем, но не падаем
+        # В продакшене можно добавить логирование
+        print(f"Warning: Failed to embed document {new_source.id}: {str(e)}")
+
     return SourceForList(
         source_id=new_source.id,
         name=new_source.name,
         source_type=SourceType(new_source.source_type),
         size_bytes=new_source.size_bytes,
         created_at=new_source.created_at.isoformat(),
+        folder_id=new_source.folder_id,
+        folder_path=None,
     )
 
 
 async def get_sources_list(
-    user_id: int, query: str | None, page: int, limit: int, db: AsyncSession
+    user_id: int,
+    query: str | None,
+    folder_id: int | None,
+    page: int,
+    limit: int,
+    search_in: str,
+    db: AsyncSession
 ) -> SourcesList:
-    stmt = select(Source).where(Source.user_id == user_id)
+    stmt = select(Source).where(Source.user_id == user_id).options(selectinload(Source.folder))
 
-    if query:
-        stmt = stmt.where(Source.name.ilike(f"%{query}%"))
+    # Full-text search if query provided
+    if query and query.strip():
+        # Prepare tsquery (escape single quotes and special chars)
+        tsquery = query.strip().replace("'", "''")
 
+        if search_in == "name":
+            # Search only in name using FTS
+            stmt = stmt.where(
+                text("name_tsvector @@ plainto_tsquery('english', :query)")
+            ).params(query=tsquery)
+            # Order by relevance
+            stmt = stmt.order_by(
+                text("ts_rank(name_tsvector, plainto_tsquery('english', :query)) DESC")
+            ).params(query=tsquery)
+        elif search_in == "content":
+            # Search only in content using FTS
+            stmt = stmt.where(
+                text("content_tsvector @@ plainto_tsquery('english', :query)")
+            ).params(query=tsquery)
+            # Order by relevance
+            stmt = stmt.order_by(
+                text("ts_rank(content_tsvector, plainto_tsquery('english', :query)) DESC")
+            ).params(query=tsquery)
+        else:  # both
+            # Search in both name and content
+            stmt = stmt.where(
+                text("""
+                    name_tsvector @@ plainto_tsquery('english', :query) OR
+                    content_tsvector @@ plainto_tsquery('english', :query)
+                """)
+            ).params(query=tsquery)
+            # Order by combined relevance
+            stmt = stmt.order_by(
+                text("""
+                    (ts_rank(name_tsvector, plainto_tsquery('english', :query)) * 2.0 +
+                     ts_rank(content_tsvector, plainto_tsquery('english', :query))) DESC
+                """)
+            ).params(query=tsquery)
+    else:
+        # No search query - just sort by date
+        stmt = stmt.order_by(Source.created_at.desc())
+
+    if folder_id is not None:
+        stmt = stmt.where(Source.folder_id == folder_id)
+
+    # Count total matching documents
     count_stmt = select(func.count(Source.id)).where(Source.user_id == user_id)
-    if query:
-        count_stmt = count_stmt.where(Source.name.ilike(f"%{query}%"))
+    if query and query.strip():
+        tsquery = query.strip().replace("'", "''")
+        if search_in == "name":
+            count_stmt = count_stmt.where(
+                text("name_tsvector @@ plainto_tsquery('english', :query)")
+            ).params(query=tsquery)
+        elif search_in == "content":
+            count_stmt = count_stmt.where(
+                text("content_tsvector @@ plainto_tsquery('english', :query)")
+            ).params(query=tsquery)
+        else:
+            count_stmt = count_stmt.where(
+                text("""
+                    name_tsvector @@ plainto_tsquery('english', :query) OR
+                    content_tsvector @@ plainto_tsquery('english', :query)
+                """)
+            ).params(query=tsquery)
+    if folder_id is not None:
+        count_stmt = count_stmt.where(Source.folder_id == folder_id)
     total_count_result = await db.execute(count_stmt)
     total_count = total_count_result.scalar() or 0
 
+    # Calculate total size
     size_stmt = select(func.sum(Source.size_bytes)).where(Source.user_id == user_id)
-    if query:
-        size_stmt = size_stmt.where(Source.name.ilike(f"%{query}%"))
+    if query and query.strip():
+        tsquery = query.strip().replace("'", "''")
+        if search_in == "name":
+            size_stmt = size_stmt.where(
+                text("name_tsvector @@ plainto_tsquery('english', :query)")
+            ).params(query=tsquery)
+        elif search_in == "content":
+            size_stmt = size_stmt.where(
+                text("content_tsvector @@ plainto_tsquery('english', :query)")
+            ).params(query=tsquery)
+        else:
+            size_stmt = size_stmt.where(
+                text("""
+                    name_tsvector @@ plainto_tsquery('english', :query) OR
+                    content_tsvector @@ plainto_tsquery('english', :query)
+                """)
+            ).params(query=tsquery)
+    if folder_id is not None:
+        size_stmt = size_stmt.where(Source.folder_id == folder_id)
     total_size_result = await db.execute(size_stmt)
     total_size_bytes = total_size_result.scalar() or 0
 
+    # Apply pagination
     offset = (page - 1) * limit
-    stmt = stmt.order_by(Source.created_at.desc()).offset(offset).limit(limit)
+    stmt = stmt.offset(offset).limit(limit)
 
     result = await db.execute(stmt)
     sources = result.scalars().all()
@@ -109,6 +221,8 @@ async def get_sources_list(
                 source_type=SourceType(source.source_type),
                 size_bytes=source.size_bytes,
                 created_at=source.created_at.isoformat(),
+                folder_id=source.folder_id,
+                folder_path=source.folder.path if source.folder else None,
             )
             for source in sources
         ],
@@ -117,7 +231,9 @@ async def get_sources_list(
 
 async def get_source(source_id: int, user_id: int, db: AsyncSession) -> SourceContent:
     result = await db.execute(
-        select(Source).where(Source.id == source_id, Source.user_id == user_id)
+        select(Source)
+        .where(Source.id == source_id, Source.user_id == user_id)
+        .options(selectinload(Source.folder))
     )
     source = result.scalar_one_or_none()
 
@@ -133,6 +249,8 @@ async def get_source(source_id: int, user_id: int, db: AsyncSession) -> SourceCo
         content=source.content,
         size_bytes=source.size_bytes,
         created_at=source.created_at.isoformat(),
+        folder_id=source.folder_id,
+        folder_path=source.folder.path if source.folder else None,
     )
 
 
@@ -146,6 +264,17 @@ async def delete_source(source_id: int, user_id: int, db: AsyncSession) -> None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Source not found"
         )
+
+    # Удаляем эмбеддинги из ChromaDB через API
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            delete_response = await client.delete(
+                f"{RAG_API_URL}/embed/document/{source_id}"
+            )
+            delete_response.raise_for_status()
+    except Exception as e:
+        # Логируем, но продолжаем удаление документа
+        print(f"Warning: Failed to delete embeddings for document {source_id}: {str(e)}")
 
     await db.delete(source)
     await db.commit()

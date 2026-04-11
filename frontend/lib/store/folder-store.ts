@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { devtools } from "zustand/middleware"
+import { getFolders, type BackendFolder } from "@/lib/api"
 
 export interface Folder {
   id: string
@@ -14,56 +15,34 @@ interface FolderState {
   folders: Folder[]
   currentFolderId: string | null
   expandedFolders: string[]
+  isLoading: boolean
 }
 
 interface FolderActions {
+  loadFolders: () => Promise<void>
   createFolder: (name: string, parentId?: string | null) => void
   updateFolder: (id: string, name: string) => void
   deleteFolder: (id: string) => void
   moveFolder: (id: string, targetParentId: string | null) => void
   setCurrentFolder: (id: string | null) => void
   toggleFolderExpanded: (id: string) => void
-  incrementDocumentCount: (folderId: string | null) => void
-  decrementDocumentCount: (folderId: string | null) => void
 }
 
 type FolderStore = FolderState & FolderActions
 
-// Mock initial folders
-const mockFolders: Folder[] = [
-  {
-    id: "root",
-    name: "All Documents",
-    path: "/",
-    parentId: null,
-    createdAt: new Date(),
-    documentCount: 5,
-  },
-  {
-    id: "projects",
-    name: "Projects",
-    path: "/projects",
-    parentId: "root",
-    createdAt: new Date(Date.now() - 86400000 * 7),
-    documentCount: 2,
-  },
-  {
-    id: "research",
-    name: "Research",
-    path: "/research",
-    parentId: "root",
-    createdAt: new Date(Date.now() - 86400000 * 5),
-    documentCount: 1,
-  },
-  {
-    id: "ai-project",
-    name: "AI",
-    path: "/projects/ai",
-    parentId: "projects",
-    createdAt: new Date(Date.now() - 86400000 * 3),
-    documentCount: 1,
-  },
-]
+/**
+ * Convert backend folder to frontend folder
+ */
+function adaptBackendFolder(backendFolder: BackendFolder): Folder {
+  return {
+    id: backendFolder.id.toString(),
+    name: backendFolder.name,
+    path: backendFolder.path,
+    parentId: backendFolder.parent_id?.toString() || null,
+    createdAt: new Date(backendFolder.created_at),
+    documentCount: backendFolder.document_count,
+  }
+}
 
 function buildPath(folders: Folder[], folderId: string): string {
   const folder = folders.find((f) => f.id === folderId)
@@ -79,12 +58,27 @@ export const useFolderStore = create<FolderStore>()(
   devtools(
     (set, get) => ({
       // Initial state
-      folders: mockFolders,
-      currentFolderId: "root",
-      expandedFolders: ["root", "projects"],
+      folders: [],
+      currentFolderId: null, // null = показывать все документы
+      expandedFolders: [],
+      isLoading: false,
 
       // Actions
-      createFolder: (name, parentId = "root") => {
+      loadFolders: async () => {
+        set({ isLoading: true })
+        const result = await getFolders()
+
+        if (result.success) {
+          const folders = result.data.map(adaptBackendFolder)
+          console.log('Loaded folders:', folders.slice(0, 5)) // Debug: show first 5 folders
+          set({ folders, isLoading: false })
+        } else {
+          console.error("Failed to load folders:", result.error)
+          set({ isLoading: false })
+        }
+      },
+
+      createFolder: (name, parentId = null) => {
         const id = `folder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
         const folders = get().folders
         const path = parentId ? `${buildPath(folders, parentId)}/${name}` : `/${name}`
@@ -186,26 +180,6 @@ export const useFolderStore = create<FolderStore>()(
               : [...state.expandedFolders, id],
           }
         })
-      },
-
-      incrementDocumentCount: (folderId) => {
-        if (!folderId) folderId = "root"
-        set((state) => ({
-          folders: state.folders.map((f) =>
-            f.id === folderId ? { ...f, documentCount: f.documentCount + 1 } : f
-          ),
-        }))
-      },
-
-      decrementDocumentCount: (folderId) => {
-        if (!folderId) folderId = "root"
-        set((state) => ({
-          folders: state.folders.map((f) =>
-            f.id === folderId
-              ? { ...f, documentCount: Math.max(0, f.documentCount - 1) }
-              : f
-          ),
-        }))
       },
     }),
     { name: "folder-store" }

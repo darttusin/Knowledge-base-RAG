@@ -7,11 +7,13 @@ from typing import Optional
 from loguru import logger
 from rag import (
     ChatModel,
-    Settings as RagSettings,
     answer,
     create_chat_model,
     create_embed_model,
     create_reranker,
+)
+from rag import (
+    Settings as RagSettings,
 )
 from rag.models import RetrievedChunk
 from rag.retriever import retrieve, retrieve_with_query_transform, retrieve_with_rerank
@@ -70,6 +72,7 @@ class RagService:
     def _load_models(self, classifier_path: Optional[Path] = None):
         """Load all required models."""
         logger.info("Loading RAG models...")
+        logger.info(f"Using device: {self.settings.device}")
 
         # Create LLM model
         self.chat_model = create_chat_model(self.settings)

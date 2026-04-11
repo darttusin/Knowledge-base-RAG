@@ -1,4 +1,14 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _get_default_device() -> str:
+    """Auto-detect best available device."""
+    try:
+        import torch
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except ImportError:
+        return "cpu"
 
 
 class Settings(BaseSettings):
@@ -33,4 +43,27 @@ class Settings(BaseSettings):
     wandb_project: str = "pytorch-rag-experiments"
     wandb_api_key: str = ""
 
-    device: str = "cuda"
+    device: str = _get_default_device()
+
+    @field_validator("device")
+    @classmethod
+    def validate_device(cls, v: str) -> str:
+        """Validate and normalize device string."""
+        v = v.lower()
+        if v not in ("cpu", "cuda", "mps"):
+            raise ValueError(f"Invalid device: {v}. Must be 'cpu', 'cuda', or 'mps'")
+
+        # Check if requested device is available
+        if v == "cuda":
+            try:
+                import torch
+                if not torch.cuda.is_available():
+                    import warnings
+                    warnings.warn("CUDA requested but not available, falling back to CPU")
+                    return "cpu"
+            except ImportError:
+                import warnings
+                warnings.warn("torch not installed, falling back to CPU")
+                return "cpu"
+
+        return v

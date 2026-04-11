@@ -233,7 +233,7 @@ function ConversationItem({ conversation, isActive, onSelect, onRename, onDelete
           <Button
             variant="ghost"
             size="icon"
-            className="hover:bg-background h-6 w-6 opacity-0 group-hover:opacity-100"
+            className="hover:bg-background h-6 w-6 opacity-70 transition-opacity hover:opacity-100 group-hover:opacity-100"
             onClick={(e) => e.stopPropagation()}
           >
             <MoreHorizontal className="h-3 w-3" />

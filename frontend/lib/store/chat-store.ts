@@ -402,10 +402,130 @@ export const useChatStore = create<ChatStore>()(
         set({ selectedFolderIds: [] })
       },
 
-      // Edit message (regenerates response)
+      // Edit message (or regenerate response for that specific message group)
       editMessage: async (messageId, newContent) => {
-        // Simply re-send the message to regenerate
-        await get().sendMessage(newContent)
+        const { activeConversation } = get()
+        if (!activeConversation?.messages) return
+
+        const originalMessages = activeConversation.messages
+        const userMessageIndex = originalMessages.findIndex(
+          (msg) => msg.id === messageId && msg.role === "user"
+        )
+
+        if (userMessageIndex === -1) return
+
+        const nextUserMessageIndex = originalMessages.findIndex(
+          (msg, idx) => idx > userMessageIndex && msg.role === "user"
+        )
+
+        const updatedUserMessage: Message = {
+          ...originalMessages[userMessageIndex],
+          content: newContent,
+          isEdited: originalMessages[userMessageIndex].content !== newContent,
+        }
+
+        const messagesBefore = originalMessages.slice(0, userMessageIndex)
+        const messagesAfter =
+          nextUserMessageIndex === -1 ? [] : originalMessages.slice(nextUserMessageIndex)
+        const messagesWithoutCurrentResponses = [
+          ...messagesBefore,
+          updatedUserMessage,
+          ...messagesAfter,
+        ]
+
+        // Optimistically replace current user block and remove old assistant responses for it
+        set((state) => {
+          const updatedConversation = state.activeConversation
+            ? {
+                ...state.activeConversation,
+                messages: messagesWithoutCurrentResponses,
+                updatedAt: new Date(),
+              }
+            : null
+
+          return {
+            activeConversation: updatedConversation,
+            conversations: updatedConversation
+              ? state.conversations.map((c) =>
+                  c.id === updatedConversation.id ? updatedConversation : c
+                )
+              : state.conversations,
+            isWaitingForResponse: true,
+          }
+        })
+
+        const result = await apiSendMessage(parseInt(activeConversation.id), newContent)
+
+        if (result.success) {
+          const sources = result.data.sources.map((sourceRef, idx) => ({
+            id: `source-${result.data.messageId}-${idx}`,
+            title: sourceRef.document_name,
+            content: sourceRef.chunk_text,
+            relevance: sourceRef.relevance_score,
+            type: "document" as const,
+            documentId: sourceRef.source_id.toString(),
+            folderPath: sourceRef.folder_path || undefined,
+          }))
+
+          const assistantMessage: Message = {
+            id: result.data.messageId,
+            role: "assistant",
+            content: result.data.assistantMessage,
+            sources,
+            parentMessageId: updatedUserMessage.id,
+            timestamp: new Date(),
+          }
+
+          set((state) => {
+            const conversationMessages = [
+              ...messagesBefore,
+              updatedUserMessage,
+              assistantMessage,
+              ...messagesAfter,
+            ]
+            const updatedConversation = state.activeConversation
+              ? {
+                  ...state.activeConversation,
+                  messages: conversationMessages,
+                  updatedAt: new Date(),
+                }
+              : null
+
+            const allSources = conversationMessages.flatMap((msg) => msg.sources || [])
+
+            return {
+              activeConversation: updatedConversation,
+              conversations: updatedConversation
+                ? state.conversations.map((c) =>
+                    c.id === updatedConversation.id ? updatedConversation : c
+                  )
+                : state.conversations,
+              selectedSources: allSources,
+              isWaitingForResponse: false,
+            }
+          })
+        } else {
+          // Revert optimistic update if request failed
+          set((state) => {
+            const revertedConversation = state.activeConversation
+              ? {
+                  ...state.activeConversation,
+                  messages: originalMessages,
+                }
+              : null
+
+            return {
+              activeConversation: revertedConversation,
+              conversations: revertedConversation
+                ? state.conversations.map((c) =>
+                    c.id === revertedConversation.id ? revertedConversation : c
+                  )
+                : state.conversations,
+              isWaitingForResponse: false,
+            }
+          })
+          toast.error(`Failed to regenerate message: ${result.error}`)
+        }
       },
     }),
     { name: "chat-store" }

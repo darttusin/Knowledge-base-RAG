@@ -21,7 +21,7 @@ from .models import (
 def generate_pre_generated_queries() -> list[PreGeneratedQuery]:
     return [
         PreGeneratedQuery(
-            query="How does autograd work for automatic differentiation?",
+            query="How does torch.autograd work for automatic differentiation?",
             icon=IconsEnum.doc,
         ),
         PreGeneratedQuery(
@@ -29,7 +29,7 @@ def generate_pre_generated_queries() -> list[PreGeneratedQuery]:
             icon=IconsEnum.database,
         ),
         PreGeneratedQuery(
-            query="How to properly configure a learning rate scheduler?",
+            query="How to properly configure a torch learning rate scheduler?",
             icon=IconsEnum.browser,
         ),
     ]

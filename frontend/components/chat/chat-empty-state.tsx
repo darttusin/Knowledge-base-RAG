@@ -19,7 +19,7 @@ const COLOR_MAP = {
 // Fallback suggestions if backend doesn't provide any
 const DEFAULT_SUGGESTIONS: PreGeneratedQuery[] = [
   {
-    query: "How does autograd work for automatic differentiation?",
+    query: "How does torch.autograd work for automatic differentiation?",
     icon: "database",
   },
   {
@@ -27,7 +27,7 @@ const DEFAULT_SUGGESTIONS: PreGeneratedQuery[] = [
     icon: "doc",
   },
   {
-    query: "How to properly configure a learning rate scheduler?",
+    query: "How to properly configure a torch learning rate scheduler?",
     icon: "browser",
   },
 ]

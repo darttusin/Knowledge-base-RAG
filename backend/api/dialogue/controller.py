@@ -52,30 +52,38 @@ Output ONLY the title, nothing else.
 Question: {question}
 Title:"""
 
-    try:
-        # Use chat model directly for title generation
-        response = rag_service.chat_model.chat(
-            [{"role": "user", "content": prompt}], max_tokens=20, temperature=0.7
-        )
-        title = response.strip()
-        print("dialog title", title)
+    def _fallback_title() -> str:
+        # Keep deterministic fallback but avoid trailing ellipsis in UI title.
+        words = question.split()[:6]
+        return " ".join(words) if words else "New conversation"
 
-        # Fallback if title is too long or empty
-        if not title or len(title) > 100:
-            # Extract first few words from question
-            words = question.split()[:5]
-            title = " ".join(words)
-            if len(question.split()) > 5:
-                title += "..."
+    try:
+        response = rag_service.chat_model.invoke(
+            [{"role": "user", "content": prompt}], max_tokens=24, temperature=0.2
+        )
+        if not response:
+            return _fallback_title()
+
+        # Normalize model output: first line only, remove wrappers/prefixes.
+        title = response.strip().splitlines()[0].strip()
+        title = title.removeprefix("Title:").strip().strip("\"'`")
+
+        # Remove markdown heading/punctuation noise.
+        while title.startswith("#"):
+            title = title[1:].strip()
+        title = title.strip(" .,!?:;-")
+
+        if not title:
+            return _fallback_title()
+
+        # Enforce concise title shape without dropping to query fallback.
+        words = title.split()
+        if len(words) > 6:
+            title = " ".join(words[:6])
 
         return title
     except Exception:
-        # Fallback on error
-        words = question.split()[:5]
-        title = " ".join(words)
-        if len(question.split()) > 5:
-            title += "..."
-        return title
+        return _fallback_title()
 
 
 async def create_dialogue(

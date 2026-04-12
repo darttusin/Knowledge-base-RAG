@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from fastapi import HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
@@ -339,64 +340,65 @@ async def send_message_stream(
     user_id: int,
     db: AsyncSession,
 ) -> StreamingResponse:
+    result = await db.execute(
+        select(Dialogue)
+        .where(Dialogue.id == data.dialogue_id, Dialogue.user_id == user_id)
+        .options(selectinload(Dialogue.messages))
+    )
+    dialogue = result.scalar_one_or_none()
+
+    if not dialogue:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Dialogue not found"
+        )
+
+    is_first_message = len(dialogue.messages) == 0
+    parent_message_id = await _validate_parent_message_id(
+        data.parent_message_id, data.dialogue_id, user_id, db
+    )
+
+    new_message = Message(
+        dialogue_id=data.dialogue_id,
+        parent_message_id=parent_message_id,
+        user_message=data.message,
+        assistant_response=None,
+    )
+    db.add(new_message)
+    await db.flush()
+
+    if not settings.RAG_ENABLED:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RAG service is disabled. Enable RAG_ENABLED in settings.",
+        )
+
+    try:
+        rag_service = get_rag_service()
+        rag_response = rag_service.answer_question_stream(
+            question=data.message,
+            strategy="query_transform",
+            check_topic=settings.OUTLIER_DETECTION_ENABLED,
+            reject_off_topic=settings.OUTLIER_REJECT_OFF_TOPIC,
+        )
+    except RuntimeError as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"RAG service not initialized: {str(e)}",
+        )
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"RAG service error: {str(e)}",
+        )
+
     async def event_generator():
-        result = await db.execute(
-            select(Dialogue)
-            .where(Dialogue.id == data.dialogue_id, Dialogue.user_id == user_id)
-            .options(selectinload(Dialogue.messages))
-        )
-        dialogue = result.scalar_one_or_none()
-
-        if not dialogue:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Dialogue not found"
-            )
-
-        is_first_message = len(dialogue.messages) == 0
-        parent_message_id = await _validate_parent_message_id(
-            data.parent_message_id, data.dialogue_id, user_id, db
-        )
-
-        new_message = Message(
-            dialogue_id=data.dialogue_id,
-            parent_message_id=parent_message_id,
-            user_message=data.message,
-            assistant_response=None,
-        )
-        db.add(new_message)
-        await db.flush()
-
-        if not settings.RAG_ENABLED:
-            await db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="RAG service is disabled. Enable RAG_ENABLED in settings.",
-            )
-
-        try:
-            rag_service = get_rag_service()
-            rag_response = rag_service.answer_question_stream(
-                question=data.message,
-                strategy="query_transform",
-                check_topic=settings.OUTLIER_DETECTION_ENABLED,
-                reject_off_topic=settings.OUTLIER_REJECT_OFF_TOPIC,
-            )
-        except RuntimeError as e:
-            await db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"RAG service not initialized: {str(e)}",
-            )
-        except Exception as e:
-            await db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"RAG service error: {str(e)}",
-            )
-
         assistant_chunks: list[str] = []
         queue: asyncio.Queue[tuple[str, str | Exception | None]] = asyncio.Queue()
         loop = asyncio.get_running_loop()
+        stream_task: asyncio.Task | None = None
 
         def _produce_stream_chunks() -> None:
             try:
@@ -407,103 +409,118 @@ async def send_message_stream(
             finally:
                 loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
 
-        stream_task = asyncio.create_task(asyncio.to_thread(_produce_stream_chunks))
+        try:
+            stream_task = asyncio.create_task(asyncio.to_thread(_produce_stream_chunks))
 
-        stream_error: Exception | None = None
-        while True:
-            event_type, payload = await queue.get()
-            if event_type == "chunk":
-                delta = str(payload or "")
-                assistant_chunks.append(delta)
-                yield _sse_event({"type": "chunk", "delta": delta})
-                continue
+            stream_error: Exception | None = None
+            while True:
+                event_type, payload = await queue.get()
+                if event_type == "chunk":
+                    delta = str(payload or "")
+                    assistant_chunks.append(delta)
+                    yield _sse_event({"type": "chunk", "delta": delta})
+                    continue
 
-            if event_type == "error":
-                if isinstance(payload, Exception):
-                    stream_error = payload
-                continue
+                if event_type == "error":
+                    if isinstance(payload, Exception):
+                        stream_error = payload
+                    continue
 
-            if event_type == "done":
-                break
-
-        await stream_task
-
-        if stream_error:
-            await db.rollback()
-            yield _sse_event({"type": "error", "message": f"RAG stream error: {str(stream_error)}", "code": 500})
-            yield "data: [DONE]\n\n"
-            return
-
-        chunks_by_source: dict[int, list[tuple[int, float, str]]] = {}
-        source_metadata: dict[int, tuple[str, str | None]] = {}
-        for position, chunk in enumerate(rag_response.chunks, start=1):
-            source_path = chunk.source
-            for prefix in ["drive/MyDrive/dataset/", "dataset/"]:
-                if source_path.startswith(prefix):
-                    source_path = source_path[len(prefix):]
+                if event_type == "done":
                     break
-            source_obj = await find_source_by_path(source_path, user_id, db)
-            if source_obj:
-                if source_obj.id not in chunks_by_source:
-                    chunks_by_source[source_obj.id] = []
-                    folder_path = source_obj.folder.path if source_obj.folder else None
-                    source_metadata[source_obj.id] = (source_obj.name, folder_path)
-                chunks_by_source[source_obj.id].append((position, chunk.score, chunk.text))
 
-        relevance_scores = calculate_smart_relevance(chunks_by_source)
-        source_references: list[SourceReference] = []
-        for source_id, (relevance_score, best_chunk_text) in relevance_scores.items():
-            document_name, folder_path = source_metadata[source_id]
-            source_references.append(
-                SourceReference(
-                    source_id=source_id,
-                    document_name=document_name,
-                    chunk_text=best_chunk_text,
-                    relevance_score=relevance_score,
-                    folder_path=folder_path,
+            if stream_task:
+                await stream_task
+
+            if stream_error:
+                await db.rollback()
+                yield _sse_event({"type": "error", "message": f"RAG stream error: {str(stream_error)}", "code": 500})
+                yield "data: [DONE]\n\n"
+                return
+
+            chunks_by_source: dict[int, list[tuple[int, float, str]]] = {}
+            source_metadata: dict[int, tuple[str, str | None]] = {}
+            for position, chunk in enumerate(rag_response.chunks, start=1):
+                source_path = chunk.source
+                for prefix in ["drive/MyDrive/dataset/", "dataset/"]:
+                    if source_path.startswith(prefix):
+                        source_path = source_path[len(prefix):]
+                        break
+                source_obj = await find_source_by_path(source_path, user_id, db)
+                if source_obj:
+                    if source_obj.id not in chunks_by_source:
+                        chunks_by_source[source_obj.id] = []
+                        folder_path = source_obj.folder.path if source_obj.folder else None
+                        source_metadata[source_obj.id] = (source_obj.name, folder_path)
+                    chunks_by_source[source_obj.id].append((position, chunk.score, chunk.text))
+
+            relevance_scores = calculate_smart_relevance(chunks_by_source)
+            source_references: list[SourceReference] = []
+            for source_id, (relevance_score, best_chunk_text) in relevance_scores.items():
+                document_name, folder_path = source_metadata[source_id]
+                source_references.append(
+                    SourceReference(
+                        source_id=source_id,
+                        document_name=document_name,
+                        chunk_text=best_chunk_text,
+                        relevance_score=relevance_score,
+                        folder_path=folder_path,
+                    )
                 )
+
+            source_references = sorted(
+                source_references,
+                key=lambda x: x.relevance_score,
+                reverse=True
             )
 
-        source_references = sorted(
-            source_references,
-            key=lambda x: x.relevance_score,
-            reverse=True
-        )
+            assistant_response = "".join(assistant_chunks)
+            assistant_response = remap_response_citations(
+                assistant_response,
+                chunks_by_source,
+                source_references,
+            )
 
-        assistant_response = "".join(assistant_chunks)
-        assistant_response = remap_response_citations(
-            assistant_response,
-            chunks_by_source,
-            source_references,
-        )
+            created_at = new_message.created_at.isoformat() if new_message.created_at else ""
+            yield _sse_event(
+                {
+                    "type": "complete",
+                    "sources": [source.model_dump() for source in source_references],
+                    "message_id": new_message.id,
+                    "parent_message_id": new_message.parent_message_id,
+                    "created_at": created_at,
+                }
+            )
 
-        created_at = new_message.created_at.isoformat() if new_message.created_at else ""
-        yield _sse_event(
-            {
-                "type": "complete",
-                "sources": [source.model_dump() for source in source_references],
-                "message_id": new_message.id,
-                "parent_message_id": new_message.parent_message_id,
-                "created_at": created_at,
-            }
-        )
+            new_message.assistant_response = assistant_response
+            import json
+            sources_json = [src.model_dump() for src in source_references]
+            new_message.sources = json.dumps(sources_json) if sources_json else None
 
-        new_message.assistant_response = assistant_response
-        import json
-        sources_json = [src.model_dump() for src in source_references]
-        new_message.sources = json.dumps(sources_json) if sources_json else None
+            normalized_dialogue_name = (dialogue.name or "").strip().lower()
+            should_generate_title = is_first_message and normalized_dialogue_name in {"", "new conversation"}
+            if should_generate_title:
+                from api.dialogue.controller import generate_dialogue_title
+                try:
+                    dialogue.name = generate_dialogue_title(data.message, rag_service)
+                except Exception:
+                    pass
 
-        normalized_dialogue_name = (dialogue.name or "").strip().lower()
-        should_generate_title = is_first_message and normalized_dialogue_name in {"", "new conversation"}
-        if should_generate_title:
-            from api.dialogue.controller import generate_dialogue_title
-            try:
-                dialogue.name = generate_dialogue_title(data.message, rag_service)
-            except Exception:
-                pass
+            await db.commit()
+            yield "data: [DONE]\n\n"
 
-        await db.commit()
-        yield "data: [DONE]\n\n"
+        except asyncio.CancelledError:
+            await db.rollback()
+            raise
+        except Exception as e:  # pragma: no cover - defensive handling after stream start
+            await db.rollback()
+            yield _sse_event({"type": "error", "message": f"Stream processing error: {str(e)}", "code": 500})
+            yield "data: [DONE]\n\n"
+        finally:
+            if stream_task and not stream_task.done():
+                stream_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await stream_task
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

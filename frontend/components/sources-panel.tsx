@@ -130,7 +130,7 @@ function SourceCard({ source, onClick }: SourceCardProps) {
               📁 {source.folderPath}
             </p>
           )}
-          <p className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-relaxed">
+          <p className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-relaxed break-words">
             {source.content}
           </p>
         </div>
@@ -140,7 +140,10 @@ function SourceCard({ source, onClick }: SourceCardProps) {
           variant="ghost"
           size="sm"
           className="text-muted-foreground hover:text-foreground h-7 gap-1.5 text-xs"
-          onClick={handleOpen}
+          onClick={(e) => {
+            e.stopPropagation()
+            handleOpen()
+          }}
         >
           <ExternalLink className="h-3 w-3" />
           Open

@@ -1,6 +1,8 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -97,10 +99,10 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
             {/* Folder path if exists */}
             {source.folderPath && (
               <>
-                <div className="flex items-center gap-2 text-sm">
-                  <Hash className="text-muted-foreground h-4 w-4" />
-                  <span className="text-muted-foreground">Folder:</span>
-                  <code className="bg-muted text-foreground truncate rounded px-2 py-0.5 font-mono text-xs">
+                <div className="flex items-center gap-2 text-sm min-w-0">
+                  <Hash className="text-muted-foreground h-4 w-4 shrink-0" />
+                  <span className="text-muted-foreground shrink-0">Folder:</span>
+                  <code className="bg-muted text-foreground rounded px-2 py-0.5 font-mono text-xs break-all overflow-wrap-anywhere">
                     {source.folderPath}
                   </code>
                 </div>
@@ -134,10 +136,33 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
                   )}
                 </Button>
               </div>
-              <div className="border-border bg-muted/30 rounded-xl border p-4">
-                <pre className="text-foreground font-sans text-sm leading-relaxed whitespace-pre-wrap">
-                  {extendedData.fullContent}
-                </pre>
+              <div className="border-border bg-muted/30 rounded-xl border p-4 overflow-x-auto">
+                {source.title.endsWith(".md") ? (
+                  <div
+                    className={cn(
+                      "prose prose-sm dark:prose-invert max-w-none",
+                      "prose-p:leading-relaxed prose-p:my-2 prose-p:text-foreground",
+                      "prose-headings:font-semibold prose-headings:text-foreground",
+                      "prose-h1:text-lg prose-h2:text-base prose-h3:text-sm",
+                      "prose-strong:font-semibold prose-strong:text-foreground",
+                      "prose-code:bg-muted/50 prose-code:text-foreground prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:before:content-none prose-code:after:content-none",
+                      "prose-pre:bg-muted/50 prose-pre:p-3 prose-pre:rounded prose-pre:overflow-x-auto prose-pre:text-xs",
+                      "prose-ul:list-disc prose-ol:list-decimal prose-ul:my-2 prose-ol:my-2",
+                      "prose-li:text-foreground prose-li:my-1",
+                      "prose-a:text-primary prose-a:underline-offset-2 hover:prose-a:underline",
+                      "prose-blockquote:border-l-primary prose-blockquote:italic",
+                      "break-words"
+                    )}
+                  >
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {extendedData.fullContent}
+                    </ReactMarkdown>
+                  </div>
+                ) : (
+                  <div className="text-foreground text-sm leading-relaxed whitespace-pre-wrap break-words overflow-wrap-anywhere">
+                    {extendedData.fullContent}
+                  </div>
+                )}
               </div>
             </div>
 

@@ -128,6 +128,7 @@ export interface MessageVersionResponse {
 export interface SourceResponse {
   id: string
   title: string
+  documentName?: string  // Alternative field name from backend
   content: string
   relevance: number
   type: "document" | "database" | "api"

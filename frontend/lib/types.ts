@@ -20,6 +20,7 @@ export interface Message {
 export interface Source {
   id: string
   title: string
+  documentName?: string  // Alternative field name from backend (use this if available)
   content: string
   relevance: number
   type: "document"

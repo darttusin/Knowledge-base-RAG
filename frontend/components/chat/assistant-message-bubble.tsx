@@ -116,7 +116,7 @@ export function AssistantMessageBubble({
   const renderContent = () => {
     const preprocessCitations = (content: string) => content.replace(/\r\n/g, "\n")
 
-    // Replace [§N], [§1,2,4], [§1, §2] with clickable links
+    // Replace [§N], [§1,2,4], [§1, §2] with clickable document names
     const contentWithSourceLinks = preprocessCitations(safeStreamingContent).replace(
       /\[\s*§\s*(\d+(?:\s*,\s*§?\s*\d+)*)\s*\]/g,
       (_match, citationGroup) => {
@@ -125,7 +125,9 @@ export function AssistantMessageBubble({
           const sourceIndex = parseInt(num) - 1
 
           if (message.sources && message.sources[sourceIndex]) {
-            return `[§${num}](#source-${sourceIndex})`
+            const source = message.sources[sourceIndex]
+            const docName = source.documentName || source.title
+            return `[${docName}](#source-${sourceIndex})`
           }
 
           return citation

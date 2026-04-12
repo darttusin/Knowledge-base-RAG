@@ -313,7 +313,21 @@ export async function streamRequest<T>(
       }
 
       try {
-        callbacks.onChunk(JSON.parse(jsonStr) as T)
+        const event = JSON.parse(jsonStr)
+
+        // Handle error events from backend
+        if (event.type === "error") {
+          callbacks.onError?.(
+            new ApiRequestError(
+              event.message || "Stream error",
+              "STREAM_ERROR",
+              event.code || 500
+            )
+          )
+          return "done"
+        }
+
+        callbacks.onChunk(event as T)
       } catch {
         // Ignore JSON parse errors for malformed chunks
       }

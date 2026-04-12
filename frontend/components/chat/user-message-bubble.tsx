@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type KeyboardEvent } from "react"
+import { useEffect, useRef, useState, type KeyboardEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { TooltipButton } from "@/components/tooltip-button"
@@ -19,6 +19,15 @@ export function UserMessageBubble({ message, onEditMessage }: UserMessageBubbleP
   const [editContent, setEditContent] = useState(message.content)
   const [showHistory, setShowHistory] = useState(false)
   const [historyIndex, setHistoryIndex] = useState(0)
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (!isEditing || !editTextareaRef.current) return
+
+    const textarea = editTextareaRef.current
+    textarea.style.height = "0px"
+    textarea.style.height = `${textarea.scrollHeight}px`
+  }, [editContent, isEditing])
 
   const handleSaveEdit = () => {
     if (editContent.trim() && editContent !== message.content) {
@@ -54,11 +63,12 @@ export function UserMessageBubble({ message, onEditMessage }: UserMessageBubbleP
           {isEditing ? (
             <div className="bg-primary text-primary-foreground rounded-2xl px-3 py-2.5 sm:px-4 sm:py-3">
               <Textarea
+                ref={editTextareaRef}
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
                 onKeyDown={handleEditKeyDown}
                 rows={1}
-                className="text-primary-foreground min-h-0 resize-none border-0 bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                className="text-primary-foreground min-h-[1.25rem] w-full resize-none overflow-hidden border-0 bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                 autoFocus
               />
             </div>

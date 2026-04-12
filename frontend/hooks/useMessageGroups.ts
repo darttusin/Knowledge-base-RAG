@@ -8,25 +8,40 @@ export interface MessageGroup {
 export function useMessageGroups(conversation: Conversation | null): MessageGroup[] {
   if (!conversation || !conversation.messages) return []
 
-  const groups: MessageGroup[] = []
+  const groups: MessageGroup[] = conversation.messages
+    .filter((msg): msg is Message & { role: "user" } => msg.role === "user")
+    .map((userMessage) => ({ userMessage, responses: [] }))
 
-  for (let i = 0; i < conversation.messages.length; i++) {
-    const msg = conversation.messages[i]
-    if (msg.role === "user") {
-      const responses: Message[] = []
-      for (let j = i + 1; j < conversation.messages.length; j++) {
-        const nextMsg = conversation.messages[j]
-        if (
-          nextMsg.role === "assistant" &&
-          (nextMsg.parentMessageId === msg.id || (j === i + 1 && !nextMsg.parentMessageId))
-        ) {
-          responses.push(nextMsg)
-        }
-        if (nextMsg.role === "user") break
-      }
-      groups.push({ userMessage: msg, responses })
-    }
+  if (groups.length === 0) {
+    return []
   }
+
+  const groupByUserId = new Map(groups.map((group) => [group.userMessage.id, group]))
+
+  conversation.messages.forEach((msg, index) => {
+    if (msg.role !== "assistant") return
+
+    if (msg.parentMessageId) {
+      const parentGroup = groupByUserId.get(msg.parentMessageId)
+      if (parentGroup) {
+        parentGroup.responses.push(msg)
+      }
+      return
+    }
+
+    // Backward compatibility: if message has no parentMessageId, attach it to the
+    // nearest preceding user message.
+    for (let i = index - 1; i >= 0; i--) {
+      const prev = conversation.messages?.[i]
+      if (prev?.role === "user") {
+        const fallbackGroup = groupByUserId.get(prev.id)
+        if (fallbackGroup) {
+          fallbackGroup.responses.push(msg)
+        }
+        break
+      }
+    }
+  })
 
   return groups
 }

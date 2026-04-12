@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState, type KeyboardEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { TooltipButton } from "@/components/tooltip-button"
@@ -19,6 +19,19 @@ export function UserMessageBubble({ message, onEditMessage }: UserMessageBubbleP
   const [editContent, setEditContent] = useState(message.content)
   const [showHistory, setShowHistory] = useState(false)
   const [historyIndex, setHistoryIndex] = useState(0)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (!isEditing) {
+      setEditContent(message.content)
+    }
+  }, [message.content, isEditing])
+
+  useEffect(() => {
+    if (!isEditing || !textareaRef.current) return
+    textareaRef.current.style.height = "0px"
+    textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
+  }, [editContent, isEditing])
 
   const handleSaveEdit = () => {
     if (editContent.trim() && editContent !== message.content) {
@@ -32,6 +45,18 @@ export function UserMessageBubble({ message, onEditMessage }: UserMessageBubbleP
     setIsEditing(false)
   }
 
+  const handleEditKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault()
+      handleCancelEdit()
+      return
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      handleSaveEdit()
+    }
+  }
+
   const history = message.editHistory || []
   const hasHistory = history.length > 0
 
@@ -40,26 +65,16 @@ export function UserMessageBubble({ message, onEditMessage }: UserMessageBubbleP
       <div className="flex max-w-[85%] flex-1 justify-end sm:max-w-[80%]">
         <div className="space-y-2">
           {isEditing ? (
-            <div className="bg-muted/80 rounded-2xl p-3 sm:p-4">
+            <div className="bg-primary text-primary-foreground rounded-2xl px-3 py-2.5 sm:px-4 sm:py-3">
               <Textarea
+                ref={textareaRef}
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
-                className="text-foreground min-h-[60px] resize-none border-0 bg-transparent text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                onKeyDown={handleEditKeyDown}
+                rows={Math.max(1, editContent.split("\n").length)}
+                className="text-primary-foreground min-h-[24px] resize-none overflow-hidden border-0 bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                 autoFocus
               />
-              <div className="mt-3 flex justify-end gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCancelEdit}
-                  className="text-muted-foreground"
-                >
-                  Cancel
-                </Button>
-                <Button size="sm" onClick={handleSaveEdit}>
-                  Save
-                </Button>
-              </div>
             </div>
           ) : (
             <>
@@ -94,7 +109,10 @@ export function UserMessageBubble({ message, onEditMessage }: UserMessageBubbleP
                   variant="ghost"
                   size="icon"
                   className="text-muted-foreground hover:text-foreground hover:bg-muted/50 h-7 w-7"
-                  onClick={() => setIsEditing(true)}
+                  onClick={() => {
+                    setEditContent(message.content)
+                    setIsEditing(true)
+                  }}
                 >
                   <Pencil className="h-3.5 w-3.5" />
                 </TooltipButton>

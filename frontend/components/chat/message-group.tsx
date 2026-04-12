@@ -12,6 +12,7 @@ interface MessageGroupProps {
   responses: Message[]
   onSourceClick: (source: Source) => void
   onEditMessage: (messageId: string, newContent: string) => void
+  onRegenerateMessage: (messageId: string, parentMessageId?: number) => void
 }
 
 export function MessageGroup({
@@ -19,6 +20,7 @@ export function MessageGroup({
   responses,
   onSourceClick,
   onEditMessage,
+  onRegenerateMessage,
 }: MessageGroupProps) {
   const [currentResponseIndex, setCurrentResponseIndex] = useState(responses.length - 1)
 
@@ -32,7 +34,10 @@ export function MessageGroup({
 
   // Regenerate by re-sending the same user message
   const handleRegenerate = () => {
-    onEditMessage(userMessage.id, userMessage.content)
+    const firstResponse = responses[0]
+    const parsedParentMessageId = firstResponse ? parseInt(firstResponse.id, 10) : Number.NaN
+    const parentMessageId = Number.isNaN(parsedParentMessageId) ? undefined : parsedParentMessageId
+    onRegenerateMessage(userMessage.id, parentMessageId)
   }
 
   return (
@@ -73,9 +78,6 @@ export function MessageGroup({
               >
                 <ChevronRight className="h-3.5 w-3.5" />
               </Button>
-              <span className="text-muted-foreground ml-1 hidden text-xs sm:inline">
-                {currentResponseIndex === responses.length - 1 ? "Current" : "Previous"}
-              </span>
             </div>
           )}
         </div>

@@ -26,6 +26,33 @@ def _chunk_text(text: str, chunk_size: int = 32) -> list[str]:
     return [text[i: i + chunk_size] for i in range(0, len(text), chunk_size)]
 
 
+async def _validate_parent_message_id(
+    parent_message_id: int | None,
+    dialogue_id: int,
+    user_id: int,
+    db: AsyncSession,
+) -> int | None:
+    if parent_message_id is None:
+        return None
+
+    parent_result = await db.execute(
+        select(Message)
+        .join(Dialogue, Message.dialogue_id == Dialogue.id)
+        .where(
+            Message.id == parent_message_id,
+            Message.dialogue_id == dialogue_id,
+            Dialogue.user_id == user_id,
+        )
+    )
+    parent_message = parent_result.scalar_one_or_none()
+    if not parent_message:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Parent message not found",
+        )
+    return parent_message.id
+
+
 async def find_source_by_path(path: str, user_id: int, db: AsyncSession) -> Source | None:
     """Find Source in database by path from ChromaDB.
 
@@ -161,9 +188,15 @@ async def generate_message_response(
         )
 
     is_first_message = len(dialogue.messages) == 0
+    parent_message_id = await _validate_parent_message_id(
+        data.parent_message_id, data.dialogue_id, user_id, db
+    )
 
     new_message = Message(
-        dialogue_id=data.dialogue_id, user_message=data.message, assistant_response=None
+        dialogue_id=data.dialogue_id,
+        parent_message_id=parent_message_id,
+        user_message=data.message,
+        assistant_response=None,
     )
 
     db.add(new_message)
@@ -292,6 +325,7 @@ async def generate_message_response(
 
     return MessageResponse(
         message_id=new_message.id,
+        parent_message_id=new_message.parent_message_id,
         user_message=new_message.user_message,
         assistant_response=assistant_response,
         sources=source_references,
@@ -319,9 +353,15 @@ async def send_message_stream(
             )
 
         is_first_message = len(dialogue.messages) == 0
+        parent_message_id = await _validate_parent_message_id(
+            data.parent_message_id, data.dialogue_id, user_id, db
+        )
 
         new_message = Message(
-            dialogue_id=data.dialogue_id, user_message=data.message, assistant_response=None
+            dialogue_id=data.dialogue_id,
+            parent_message_id=parent_message_id,
+            user_message=data.message,
+            assistant_response=None,
         )
         db.add(new_message)
         await db.flush()
@@ -487,6 +527,7 @@ async def send_message_stream(
                 "type": "complete",
                 "sources": [source.model_dump() for source in source_references],
                 "message_id": new_message.id,
+                "parent_message_id": new_message.parent_message_id,
                 "created_at": created_at,
             }
         )

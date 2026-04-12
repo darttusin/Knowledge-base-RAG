@@ -40,6 +40,7 @@ interface ChatActions {
   deleteConversation: (id: string) => Promise<void>
   sendMessage: (content: string) => Promise<void>
   editMessage: (messageId: string, newContent: string) => Promise<void>
+  regenerateMessage: (messageId: string, parentMessageId?: number) => Promise<void>
 
   // UI actions
   toggleSources: () => void
@@ -176,14 +177,7 @@ export const useChatStore = create<ChatStore>()(
             const fullConversation: Conversation = {
               id: result.data.id,
               title: result.data.title,
-              messages: result.data.messages?.map((msg) => ({
-                id: msg.id,
-                role: msg.role,
-                content: msg.content,
-                sources: msg.sources,
-                timestamp: new Date(msg.timestamp),
-                feedback: msg.role === "assistant" ? (msg as any).feedback : undefined,
-              })) || [],
+              messages: result.data.messages || [],
               preGeneratedQueries: result.data.preGeneratedQueries,
               createdAt: new Date(result.data.createdAt),
               updatedAt: new Date(result.data.updatedAt),
@@ -211,7 +205,7 @@ export const useChatStore = create<ChatStore>()(
             set({
               activeConversation: { ...conversation, messages: [] },
               selectedSources: [],
-              isLoading: false
+              isLoading: false,
             })
             toast.error(`Failed to load conversation: ${result.error}`)
           }
@@ -233,9 +227,7 @@ export const useChatStore = create<ChatStore>()(
 
         if (result.success) {
           set((state) => ({
-            conversations: state.conversations.map((c) =>
-              c.id === id ? { ...c, title } : c
-            ),
+            conversations: state.conversations.map((c) => (c.id === id ? { ...c, title } : c)),
             activeConversation:
               state.activeConversation?.id === id
                 ? { ...state.activeConversation, title }
@@ -373,10 +365,15 @@ export const useChatStore = create<ChatStore>()(
                 return {
                   activeConversation:
                     state.activeConversation?.id === activeConversation.id
-                      ? { ...state.activeConversation, messages: patchMessages(state.activeConversation.messages) }
+                      ? {
+                          ...state.activeConversation,
+                          messages: patchMessages(state.activeConversation.messages),
+                        }
                       : state.activeConversation,
                   conversations: state.conversations.map((c) =>
-                    c.id === activeConversation.id ? { ...c, messages: patchMessages(c.messages) } : c
+                    c.id === activeConversation.id
+                      ? { ...c, messages: patchMessages(c.messages) }
+                      : c
                   ),
                 }
               })
@@ -389,17 +386,34 @@ export const useChatStore = create<ChatStore>()(
                 const patchMessages = (messages: Message[] = []) =>
                   messages.map((msg) =>
                     msg.id === tempAssistantId
-                      ? { ...msg, id: messageId, sources, status: "completed" as const, timestamp: new Date(event.created_at) }
+                      ? {
+                          ...msg,
+                          id: messageId,
+                          sources,
+                          parentMessageId: event.parent_message_id
+                            ? `${event.parent_message_id}-user`
+                            : msg.parentMessageId,
+                          status: "completed" as const,
+                          timestamp: new Date(event.created_at),
+                        }
                       : msg
                   )
                 const updatedActiveConversation =
                   state.activeConversation?.id === activeConversation.id
-                    ? { ...state.activeConversation, messages: patchMessages(state.activeConversation.messages), updatedAt: new Date() }
+                    ? {
+                        ...state.activeConversation,
+                        messages: patchMessages(state.activeConversation.messages),
+                        updatedAt: new Date(),
+                      }
                     : state.activeConversation
                 const updatedConversations = state.conversations.map((c) =>
-                  c.id === activeConversation.id ? { ...c, messages: patchMessages(c.messages), updatedAt: new Date() } : c
+                  c.id === activeConversation.id
+                    ? { ...c, messages: patchMessages(c.messages), updatedAt: new Date() }
+                    : c
                 )
-                const allSources = (updatedActiveConversation?.messages || []).flatMap((msg) => msg.sources || [])
+                const allSources = (updatedActiveConversation?.messages || []).flatMap(
+                  (msg) => msg.sources || []
+                )
                 return {
                   activeConversation: updatedActiveConversation,
                   conversations: updatedConversations,
@@ -415,16 +429,24 @@ export const useChatStore = create<ChatStore>()(
                 const patchMessages = (messages: Message[] = []) =>
                   messages.map((msg) =>
                     msg.id === tempAssistantId
-                      ? { ...msg, status: (isCancelled ? "cancelled" : "error") as "cancelled" | "error" }
+                      ? {
+                          ...msg,
+                          status: (isCancelled ? "cancelled" : "error") as "cancelled" | "error",
+                        }
                       : msg
                   )
                 return {
                   activeConversation:
                     state.activeConversation?.id === activeConversation.id
-                      ? { ...state.activeConversation, messages: patchMessages(state.activeConversation.messages) }
+                      ? {
+                          ...state.activeConversation,
+                          messages: patchMessages(state.activeConversation.messages),
+                        }
                       : state.activeConversation,
                   conversations: state.conversations.map((c) =>
-                    c.id === activeConversation.id ? { ...c, messages: patchMessages(c.messages) } : c
+                    c.id === activeConversation.id
+                      ? { ...c, messages: patchMessages(c.messages) }
+                      : c
                   ),
                   isWaitingForResponse: false,
                   waitingConversationId: null,
@@ -505,33 +527,223 @@ export const useChatStore = create<ChatStore>()(
 
         if (userMessageIndex === -1) return
 
+        const userMessage = originalMessages[userMessageIndex]
+        if (userMessage.role !== "user") return
+
+        const nextUserMessageIndex = originalMessages.findIndex(
+          (msg, idx) => idx > userMessageIndex && msg.role === "user"
+        )
+        const insertIndex =
+          nextUserMessageIndex === -1 ? originalMessages.length : nextUserMessageIndex
+        const previousContent = userMessage.content
+
+        const updatedUserMessage: Message = {
+          ...userMessage,
+          content: newContent,
+          isEdited: previousContent !== newContent || Boolean(userMessage.isEdited),
+          editHistory:
+            previousContent !== newContent
+              ? [
+                  ...(userMessage.editHistory || []),
+                  { content: previousContent, timestamp: userMessage.timestamp },
+                ]
+              : userMessage.editHistory,
+          timestamp: new Date(),
+        }
+
+        const tempAssistantId = `assistant-stream-${Date.now()}`
+        const tempAssistant: Message = {
+          id: tempAssistantId,
+          role: "assistant",
+          content: "",
+          status: "streaming" as const,
+          parentMessageId: updatedUserMessage.id,
+          timestamp: new Date(),
+        }
+
+        set((state) => {
+          const baseMessages = [...originalMessages]
+          baseMessages[userMessageIndex] = updatedUserMessage
+          const conversationMessages = [
+            ...baseMessages.slice(0, insertIndex),
+            tempAssistant,
+            ...baseMessages.slice(insertIndex),
+          ]
+          const updatedConversation = state.activeConversation
+            ? { ...state.activeConversation, messages: conversationMessages, updatedAt: new Date() }
+            : null
+          return {
+            activeConversation: updatedConversation,
+            conversations: updatedConversation
+              ? state.conversations.map((c) =>
+                  c.id === updatedConversation.id ? updatedConversation : c
+                )
+              : state.conversations,
+            isWaitingForResponse: true,
+            waitingConversationId: activeConversation.id,
+          }
+        })
+
+        activeStreamController?.abort()
+        activeStreamController = new AbortController()
+
+        let completed = false
+        const fallbackParentMessageId = /^(\d+)-user$/.exec(userMessage.id)?.[1]
+        const linkedParentMessageId = fallbackParentMessageId
+          ? parseInt(fallbackParentMessageId, 10)
+          : undefined
+
+        await apiSendMessageStream(
+          parseInt(activeConversation.id),
+          newContent,
+          {
+            onChunk: (delta) => {
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId ? { ...msg, content: msg.content + delta } : msg
+                  )
+                return {
+                  activeConversation: state.activeConversation
+                    ? {
+                        ...state.activeConversation,
+                        messages: patchMessages(state.activeConversation.messages),
+                      }
+                    : null,
+                  conversations: state.conversations.map((c) =>
+                    c.id === activeConversation.id
+                      ? { ...c, messages: patchMessages(c.messages) }
+                      : c
+                  ),
+                }
+              })
+            },
+            onComplete: (event) => {
+              completed = true
+              const messageId = event.message_id.toString()
+              const sources = mapSources(event.sources, messageId)
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId
+                      ? {
+                          ...msg,
+                          id: messageId,
+                          status: "completed" as const,
+                          sources,
+                          parentMessageId: userMessage.id,
+                          timestamp: new Date(event.created_at),
+                        }
+                      : msg
+                  )
+                const updatedConversation = state.activeConversation
+                  ? {
+                      ...state.activeConversation,
+                      messages: patchMessages(state.activeConversation.messages),
+                      updatedAt: new Date(),
+                    }
+                  : null
+                const allSources = (updatedConversation?.messages || []).flatMap(
+                  (msg) => msg.sources || []
+                )
+                return {
+                  activeConversation: updatedConversation,
+                  conversations: updatedConversation
+                    ? state.conversations.map((c) =>
+                        c.id === updatedConversation.id ? updatedConversation : c
+                      )
+                    : state.conversations,
+                  selectedSources: allSources,
+                  isWaitingForResponse: false,
+                  waitingConversationId: null,
+                }
+              })
+            },
+            onError: (error) => {
+              const isCancelled = error.code === "ABORT"
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages
+                    .map((msg) => {
+                      if (msg.id === tempAssistantId) {
+                        if (isCancelled) {
+                          return { ...msg, status: "cancelled" as const }
+                        }
+                        return null
+                      }
+                      if (msg.id === updatedUserMessage.id && msg.role === "user" && !isCancelled) {
+                        return userMessage
+                      }
+                      return msg
+                    })
+                    .filter(Boolean) as Message[]
+
+                return {
+                  activeConversation: state.activeConversation
+                    ? {
+                        ...state.activeConversation,
+                        messages: patchMessages(state.activeConversation.messages),
+                      }
+                    : null,
+                  conversations: state.conversations.map((c) =>
+                    c.id === activeConversation.id
+                      ? { ...c, messages: patchMessages(c.messages) }
+                      : c
+                  ),
+                  isWaitingForResponse: false,
+                  waitingConversationId: null,
+                }
+              })
+              if (!isCancelled) {
+                toast.error(`Failed to regenerate message: ${error.message}`)
+              }
+            },
+          },
+          activeStreamController.signal,
+          linkedParentMessageId
+        )
+
+        if (!completed) {
+          set({ isWaitingForResponse: false, waitingConversationId: null })
+        }
+      },
+
+      regenerateMessage: async (messageId, parentMessageId) => {
+        const { activeConversation } = get()
+        if (!activeConversation?.messages) return
+
+        const originalMessages = activeConversation.messages
+        const userMessageIndex = originalMessages.findIndex(
+          (msg) => msg.id === messageId && msg.role === "user"
+        )
+
+        if (userMessageIndex === -1) return
+
+        const userMessage = originalMessages[userMessageIndex]
         const nextUserMessageIndex = originalMessages.findIndex(
           (msg, idx) => idx > userMessageIndex && msg.role === "user"
         )
 
-        const updatedUserMessage: Message = {
-          ...originalMessages[userMessageIndex],
-          content: newContent,
-          isEdited: originalMessages[userMessageIndex].content !== newContent,
+        const insertIndex =
+          nextUserMessageIndex === -1 ? originalMessages.length : nextUserMessageIndex
+        const tempAssistantId = `assistant-stream-${Date.now()}`
+        const tempAssistant: Message = {
+          id: tempAssistantId,
+          role: "assistant",
+          content: "",
+          status: "streaming" as const,
+          parentMessageId: userMessage.id,
+          timestamp: new Date(),
         }
 
-        const messagesBefore = originalMessages.slice(0, userMessageIndex)
-        const messagesAfter =
-          nextUserMessageIndex === -1 ? [] : originalMessages.slice(nextUserMessageIndex)
-        const messagesWithoutCurrentResponses = [
-          ...messagesBefore,
-          updatedUserMessage,
-          ...messagesAfter,
-        ]
-
-        // Optimistically replace current user block and remove old assistant responses for it
         set((state) => {
+          const updatedMessages = [
+            ...originalMessages.slice(0, insertIndex),
+            tempAssistant,
+            ...originalMessages.slice(insertIndex),
+          ]
           const updatedConversation = state.activeConversation
-            ? {
-                ...state.activeConversation,
-                messages: messagesWithoutCurrentResponses,
-                updatedAt: new Date(),
-              }
+            ? { ...state.activeConversation, messages: updatedMessages, updatedAt: new Date() }
             : null
 
           return {
@@ -546,36 +758,18 @@ export const useChatStore = create<ChatStore>()(
           }
         })
 
-        const tempAssistantId = `assistant-stream-${Date.now()}`
-        const tempAssistant: Message = {
-          id: tempAssistantId,
-          role: "assistant",
-          content: "",
-          status: "streaming" as const,
-          parentMessageId: updatedUserMessage.id,
-          timestamp: new Date(),
-        }
-
-        set((state) => {
-          const conversationMessages = [...messagesBefore, updatedUserMessage, tempAssistant, ...messagesAfter]
-          const updatedConversation = state.activeConversation
-            ? { ...state.activeConversation, messages: conversationMessages, updatedAt: new Date() }
-            : null
-          return {
-            activeConversation: updatedConversation,
-            conversations: updatedConversation
-              ? state.conversations.map((c) => (c.id === updatedConversation.id ? updatedConversation : c))
-              : state.conversations,
-          }
-        })
-
         activeStreamController?.abort()
         activeStreamController = new AbortController()
 
         let completed = false
+        const fallbackParentMessageId = /^(\d+)-user$/.exec(userMessage.id)?.[1]
+        const linkedParentMessageId =
+          parentMessageId ??
+          (fallbackParentMessageId ? parseInt(fallbackParentMessageId, 10) : undefined)
+
         await apiSendMessageStream(
           parseInt(activeConversation.id),
-          newContent,
+          userMessage.content,
           {
             onChunk: (delta) => {
               set((state) => {
@@ -585,10 +779,15 @@ export const useChatStore = create<ChatStore>()(
                   )
                 return {
                   activeConversation: state.activeConversation
-                    ? { ...state.activeConversation, messages: patchMessages(state.activeConversation.messages) }
+                    ? {
+                        ...state.activeConversation,
+                        messages: patchMessages(state.activeConversation.messages),
+                      }
                     : null,
                   conversations: state.conversations.map((c) =>
-                    c.id === activeConversation.id ? { ...c, messages: patchMessages(c.messages) } : c
+                    c.id === activeConversation.id
+                      ? { ...c, messages: patchMessages(c.messages) }
+                      : c
                   ),
                 }
               })
@@ -601,17 +800,34 @@ export const useChatStore = create<ChatStore>()(
                 const patchMessages = (messages: Message[] = []) =>
                   messages.map((msg) =>
                     msg.id === tempAssistantId
-                      ? { ...msg, id: messageId, status: "completed" as const, sources, timestamp: new Date(event.created_at) }
+                      ? {
+                          ...msg,
+                          id: messageId,
+                          status: "completed" as const,
+                          sources,
+                          parentMessageId: event.parent_message_id
+                            ? `${event.parent_message_id}-user`
+                            : msg.parentMessageId,
+                          timestamp: new Date(event.created_at),
+                        }
                       : msg
                   )
                 const updatedConversation = state.activeConversation
-                  ? { ...state.activeConversation, messages: patchMessages(state.activeConversation.messages), updatedAt: new Date() }
+                  ? {
+                      ...state.activeConversation,
+                      messages: patchMessages(state.activeConversation.messages),
+                      updatedAt: new Date(),
+                    }
                   : null
-                const allSources = (updatedConversation?.messages || []).flatMap((msg) => msg.sources || [])
+                const allSources = (updatedConversation?.messages || []).flatMap(
+                  (msg) => msg.sources || []
+                )
                 return {
                   activeConversation: updatedConversation,
                   conversations: updatedConversation
-                    ? state.conversations.map((c) => (c.id === updatedConversation.id ? updatedConversation : c))
+                    ? state.conversations.map((c) =>
+                        c.id === updatedConversation.id ? updatedConversation : c
+                      )
                     : state.conversations,
                   selectedSources: allSources,
                   isWaitingForResponse: false,
@@ -621,27 +837,39 @@ export const useChatStore = create<ChatStore>()(
             },
             onError: (error) => {
               const isCancelled = error.code === "ABORT"
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId
+                      ? {
+                          ...msg,
+                          status: (isCancelled ? "cancelled" : "error") as "cancelled" | "error",
+                        }
+                      : msg
+                  )
+                return {
+                  activeConversation: state.activeConversation
+                    ? {
+                        ...state.activeConversation,
+                        messages: patchMessages(state.activeConversation.messages),
+                      }
+                    : null,
+                  conversations: state.conversations.map((c) =>
+                    c.id === activeConversation.id
+                      ? { ...c, messages: patchMessages(c.messages) }
+                      : c
+                  ),
+                  isWaitingForResponse: false,
+                  waitingConversationId: null,
+                }
+              })
               if (!isCancelled) {
-                set((state) => {
-                  const revertedConversation = state.activeConversation
-                    ? { ...state.activeConversation, messages: originalMessages }
-                    : null
-                  return {
-                    activeConversation: revertedConversation,
-                    conversations: revertedConversation
-                      ? state.conversations.map((c) => (c.id === revertedConversation.id ? revertedConversation : c))
-                      : state.conversations,
-                    isWaitingForResponse: false,
-                    waitingConversationId: null,
-                  }
-                })
                 toast.error(`Failed to regenerate message: ${error.message}`)
-                return
               }
-              set({ isWaitingForResponse: false, waitingConversationId: null })
             },
           },
-          activeStreamController.signal
+          activeStreamController.signal,
+          linkedParentMessageId
         )
 
         if (!completed) {

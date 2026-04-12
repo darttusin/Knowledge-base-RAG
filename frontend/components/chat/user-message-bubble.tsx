@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type KeyboardEvent } from "react"
+import { useEffect, useRef, useState, type KeyboardEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { TooltipButton } from "@/components/tooltip-button"
@@ -19,16 +19,29 @@ export function UserMessageBubble({ message, onEditMessage }: UserMessageBubbleP
   const [editContent, setEditContent] = useState(message.content)
   const [showHistory, setShowHistory] = useState(false)
   const [historyIndex, setHistoryIndex] = useState(0)
+  const [bubbleSize, setBubbleSize] = useState<{ width: number; height: number } | null>(null)
+  const displayBubbleRef = useRef<HTMLDivElement>(null)
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (!isEditing || !editTextareaRef.current) return
+
+    const textarea = editTextareaRef.current
+    textarea.style.height = "0px"
+    textarea.style.height = `${textarea.scrollHeight}px`
+  }, [editContent, isEditing])
 
   const handleSaveEdit = () => {
     if (editContent.trim() && editContent !== message.content) {
       onEditMessage(message.id, editContent)
     }
+    setBubbleSize(null)
     setIsEditing(false)
   }
 
   const handleCancelEdit = () => {
     setEditContent(message.content)
+    setBubbleSize(null)
     setIsEditing(false)
   }
 
@@ -47,24 +60,42 @@ export function UserMessageBubble({ message, onEditMessage }: UserMessageBubbleP
   const history = message.editHistory || []
   const hasHistory = history.length > 0
 
+  const handleStartEdit = () => {
+    if (displayBubbleRef.current) {
+      const { width, height } = displayBubbleRef.current.getBoundingClientRect()
+      setBubbleSize({ width, height })
+    }
+    setIsEditing(true)
+  }
+
   return (
     <div className="flex justify-end gap-2 sm:gap-4">
       <div className="flex max-w-[85%] flex-1 justify-end sm:max-w-[80%]">
         <div className="space-y-2">
           {isEditing ? (
-            <div className="bg-primary text-primary-foreground rounded-2xl px-3 py-2.5 sm:px-4 sm:py-3">
+            <div
+              className="bg-primary text-primary-foreground rounded-2xl px-3 py-2.5 sm:px-4 sm:py-3"
+              style={{
+                width: bubbleSize ? `${bubbleSize.width}px` : undefined,
+                minHeight: bubbleSize ? `${bubbleSize.height}px` : undefined,
+              }}
+            >
               <Textarea
+                ref={editTextareaRef}
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
                 onKeyDown={handleEditKeyDown}
                 rows={1}
-                className="text-primary-foreground min-h-0 resize-none border-0 bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                className="text-primary-foreground min-h-[1.25rem] w-full resize-none overflow-hidden border-0 bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                 autoFocus
               />
             </div>
           ) : (
             <>
-              <div className="bg-primary text-primary-foreground rounded-2xl px-3 py-2.5 sm:px-4 sm:py-3">
+              <div
+                ref={displayBubbleRef}
+                className="bg-primary text-primary-foreground rounded-2xl px-3 py-2.5 sm:px-4 sm:py-3"
+              >
                 <ParagraphRenderer
                   content={message.content}
                   className="text-sm leading-relaxed"
@@ -95,7 +126,7 @@ export function UserMessageBubble({ message, onEditMessage }: UserMessageBubbleP
                   variant="ghost"
                   size="icon"
                   className="text-muted-foreground hover:text-foreground hover:bg-muted/50 h-7 w-7"
-                  onClick={() => setIsEditing(true)}
+                  onClick={handleStartEdit}
                 >
                   <Pencil className="h-3.5 w-3.5" />
                 </TooltipButton>

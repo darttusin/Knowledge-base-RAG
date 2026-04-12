@@ -242,7 +242,7 @@ function ConversationItem({
             aria-label="Conversation actions"
             className={cn(
               "hover:bg-background focus-visible:ring-ring data-[state=open]:bg-background h-6 w-6 transition-opacity",
-              "opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 md:data-[state=open]:opacity-100",
+              "opacity-100",
               isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
             onClick={(e) => e.stopPropagation()}

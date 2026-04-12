@@ -20,6 +20,7 @@ const ENDPOINTS = {
 export interface SendMessageRequest {
   dialogue_id: number
   message: string
+  parent_message_id?: number
 }
 
 export interface SendMessageResponse {
@@ -38,12 +39,11 @@ export interface SendMessageStreamCompleteEvent {
   type: "complete"
   sources: BackendMessage["sources"]
   message_id: number
+  parent_message_id?: number | null
   created_at: string
 }
 
-export type SendMessageStreamEvent =
-  | SendMessageStreamChunkEvent
-  | SendMessageStreamCompleteEvent
+export type SendMessageStreamEvent = SendMessageStreamChunkEvent | SendMessageStreamCompleteEvent
 
 export interface SendMessageStreamCallbacks {
   onChunk: (delta: string) => void
@@ -57,9 +57,7 @@ export interface SendMessageStreamCallbacks {
 export async function createConversation(
   name: string = "New conversation"
 ): Promise<ApiResult<ConversationListItem>> {
-  const result = await safeRequest(() =>
-    api.post<BackendDialogue>(ENDPOINTS.create, { name })
-  )
+  const result = await safeRequest(() => api.post<BackendDialogue>(ENDPOINTS.create, { name }))
 
   if (!result.success) {
     return result
@@ -131,13 +129,15 @@ export async function sendMessageStream(
   dialogueId: number,
   message: string,
   callbacks: SendMessageStreamCallbacks,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  parentMessageId?: number
 ): Promise<void> {
   await streamRequest<SendMessageStreamEvent>(
     ENDPOINTS.sendMessageStream,
     {
       dialogue_id: dialogueId,
       message,
+      parent_message_id: parentMessageId,
     },
     {
       onChunk: (event) => {

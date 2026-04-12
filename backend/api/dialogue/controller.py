@@ -181,6 +181,7 @@ async def get_dialogue(
         messages.append(
             MessageResponse(
                 message_id=msg.id,
+                parent_message_id=msg.parent_message_id,
                 user_message=msg.user_message,
                 assistant_response=msg.assistant_response,
                 sources=sources,

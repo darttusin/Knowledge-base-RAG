@@ -1,6 +1,7 @@
 // Adapters to convert backend responses to frontend types
 
 import type { DocumentListItem } from "@/types/api"
+import type { Message } from "@/lib/types"
 
 /**
  * Backend source response
@@ -63,6 +64,7 @@ export interface BackendSourceReference {
  */
 export interface BackendDialogueMessage {
   message_id: number
+  parent_message_id?: number | null
   user_message: string
   assistant_response: string | null
   sources: BackendSourceReference[] | null
@@ -123,10 +125,14 @@ export function adaptSourcesList(backendList: BackendSourcesList) {
  * Convert backend dialogue message to frontend message
  */
 export function adaptDialogueMessage(message: BackendDialogueMessage) {
+  const parentUserMessageId = message.parent_message_id
+    ? `${message.parent_message_id}-user`
+    : undefined
+
   if (!message.assistant_response) {
     // User message only (shouldn't happen normally)
     return {
-      id: message.message_id.toString(),
+      id: parentUserMessageId || `${message.message_id}-user`,
       role: "user" as const,
       content: message.user_message,
       timestamp: new Date(message.created_at),
@@ -134,17 +140,32 @@ export function adaptDialogueMessage(message: BackendDialogueMessage) {
   }
 
   // Convert sources from BackendSourceReference to Source objects
-  const sources = message.sources?.map((sourceRef, idx) => ({
-    id: `source-${message.message_id}-${idx}`,
-    title: sourceRef.document_name,
-    content: sourceRef.chunk_text,
-    relevance: sourceRef.relevance_score,
-    type: "document" as const,
-    documentId: sourceRef.source_id.toString(),
-    folderPath: sourceRef.folder_path || undefined,
-  })) || undefined
+  const sources =
+    message.sources?.map((sourceRef, idx) => ({
+      id: `source-${message.message_id}-${idx}`,
+      title: sourceRef.document_name,
+      content: sourceRef.chunk_text,
+      relevance: sourceRef.relevance_score,
+      type: "document" as const,
+      documentId: sourceRef.source_id.toString(),
+      folderPath: sourceRef.folder_path || undefined,
+    })) || undefined
 
-  // Return both user and assistant messages
+  // Regenerated versions are linked to existing user message via parent_message_id.
+  // Do not duplicate user bubbles for them.
+  if (parentUserMessageId) {
+    return {
+      id: message.message_id.toString(),
+      role: "assistant" as const,
+      content: message.assistant_response,
+      sources,
+      parentMessageId: parentUserMessageId,
+      timestamp: new Date(message.created_at),
+      feedback: message.feedback as "like" | "dislike" | undefined,
+    }
+  }
+
+  // Regular first response: return both user and assistant messages
   return [
     {
       id: `${message.message_id}-user`,
@@ -167,9 +188,61 @@ export function adaptDialogueMessage(message: BackendDialogueMessage) {
  * Convert backend dialogue to frontend conversation
  */
 export function adaptDialogueToConversation(dialogue: BackendDialogue) {
-  const messages = dialogue.messages
-    ? dialogue.messages.flatMap((msg) => adaptDialogueMessage(msg))
-    : []
+  const messages: Message[] = []
+  const userMessageByRoot = new Map<number, Message>()
+
+  for (const backendMessage of dialogue.messages || []) {
+    const rootMessageId = backendMessage.parent_message_id ?? backendMessage.message_id
+    const userMessageId = `${rootMessageId}-user`
+
+    let userMessage = userMessageByRoot.get(rootMessageId)
+    if (!userMessage) {
+      userMessage = {
+        id: userMessageId,
+        role: "user",
+        content: backendMessage.user_message,
+        timestamp: new Date(backendMessage.created_at),
+      }
+      userMessageByRoot.set(rootMessageId, userMessage)
+      messages.push(userMessage)
+    } else if (backendMessage.user_message !== userMessage.content && userMessage.role === "user") {
+      userMessage.editHistory = [
+        ...(userMessage.editHistory || []),
+        {
+          content: userMessage.content,
+          timestamp: userMessage.timestamp,
+        },
+      ]
+      userMessage.content = backendMessage.user_message
+      userMessage.isEdited = true
+      userMessage.timestamp = new Date(backendMessage.created_at)
+    }
+
+    if (!backendMessage.assistant_response) {
+      continue
+    }
+
+    const sources =
+      backendMessage.sources?.map((sourceRef, idx) => ({
+        id: `source-${backendMessage.message_id}-${idx}`,
+        title: sourceRef.document_name,
+        content: sourceRef.chunk_text,
+        relevance: sourceRef.relevance_score,
+        type: "document" as const,
+        documentId: sourceRef.source_id.toString(),
+        folderPath: sourceRef.folder_path || undefined,
+      })) || undefined
+
+    messages.push({
+      id: backendMessage.message_id.toString(),
+      role: "assistant",
+      content: backendMessage.assistant_response,
+      sources,
+      parentMessageId: userMessageId,
+      timestamp: new Date(backendMessage.created_at),
+      feedback: backendMessage.feedback as "like" | "dislike" | undefined,
+    })
+  }
 
   return {
     id: dialogue.dialogue_id.toString(),

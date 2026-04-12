@@ -34,6 +34,7 @@ class SourceReference(BaseModel):
 
 class MessageResponse(BaseModel):
     message_id: int
+    parent_message_id: int | None = None
     user_message: str
     assistant_response: str | None
     sources: list[SourceReference] | None = None

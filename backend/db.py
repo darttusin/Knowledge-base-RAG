@@ -60,6 +60,9 @@ class Message(Base):
         nullable=False,
         index=True,
     )
+    parent_message_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("messages.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     user_message: Mapped[str] = mapped_column(Text, nullable=False)
     assistant_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     sources: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of source URLs
@@ -126,6 +129,39 @@ async def init_db():
 
         # Create full-text search indexes for sources
         # Add tsvector columns if they don't exist
+        await conn.execute(text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'messages' AND column_name = 'parent_message_id'
+                ) THEN
+                    ALTER TABLE messages ADD COLUMN parent_message_id INTEGER;
+                END IF;
+            END $$
+        """))
+
+        await conn.execute(text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'fk_messages_parent_message_id'
+                ) THEN
+                    ALTER TABLE messages
+                    ADD CONSTRAINT fk_messages_parent_message_id
+                    FOREIGN KEY (parent_message_id)
+                    REFERENCES messages(id)
+                    ON DELETE SET NULL;
+                END IF;
+            END $$
+        """))
+
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_messages_parent_message_id ON messages(parent_message_id)"
+        ))
+
         await conn.execute(text("""
             DO $$
             BEGIN

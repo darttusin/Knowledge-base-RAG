@@ -78,9 +78,6 @@ export function MessageGroup({
               >
                 <ChevronRight className="h-3.5 w-3.5" />
               </Button>
-              <span className="text-muted-foreground ml-1 hidden text-xs sm:inline">
-                {currentResponseIndex === responses.length - 1 ? "Current" : "Previous"}
-              </span>
             </div>
           )}
         </div>

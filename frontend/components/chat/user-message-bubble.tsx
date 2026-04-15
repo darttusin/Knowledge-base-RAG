@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react"
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { TooltipButton } from "@/components/tooltip-button"
@@ -23,6 +23,28 @@ export function UserMessageBubble({ message, onEditMessage }: UserMessageBubbleP
   const displayBubbleRef = useRef<HTMLDivElement>(null)
   const editTextareaRef = useRef<HTMLTextAreaElement>(null)
 
+  const handleSaveEdit = useCallback(() => {
+    if (editContent.trim() && editContent !== message.content) {
+      onEditMessage(message.id, editContent)
+    }
+    setIsEditing(false)
+    setBubbleSize(null)
+  }, [editContent, message.content, message.id, onEditMessage])
+
+  const handleCancelEdit = useCallback(() => {
+    setIsEditing(false)
+    setEditContent(message.content)
+    setBubbleSize(null)
+  }, [message.content])
+
+  // Sync editContent with message.content when not editing
+  useEffect(() => {
+    if (!isEditing) {
+      setEditContent(message.content)
+    }
+  }, [message.content, isEditing])
+
+  // Auto-resize textarea
   useEffect(() => {
     if (!isEditing || !editTextareaRef.current) return
 
@@ -31,19 +53,24 @@ export function UserMessageBubble({ message, onEditMessage }: UserMessageBubbleP
     textarea.style.height = `${textarea.scrollHeight}px`
   }, [editContent, isEditing])
 
-  const handleSaveEdit = () => {
-    if (editContent.trim() && editContent !== message.content) {
-      onEditMessage(message.id, editContent)
-    }
-    setBubbleSize(null)
-    setIsEditing(false)
-  }
+  // Global ESC handler for edit mode
+  useEffect(() => {
+    if (!isEditing) return
 
-  const handleCancelEdit = () => {
-    setEditContent(message.content)
-    setBubbleSize(null)
-    setIsEditing(false)
-  }
+    const handleEscape = (e: Event) => {
+      const keyEvent = e as globalThis.KeyboardEvent
+      if (keyEvent.key === "Escape") {
+        keyEvent.preventDefault()
+        keyEvent.stopPropagation()
+        setIsEditing(false)
+        setEditContent(message.content)
+        setBubbleSize(null)
+      }
+    }
+
+    document.addEventListener("keydown", handleEscape, true)
+    return () => document.removeEventListener("keydown", handleEscape, true)
+  }, [isEditing, message.content])
 
   const handleEditKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Escape") {

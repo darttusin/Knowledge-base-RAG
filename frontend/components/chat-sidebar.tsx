@@ -233,7 +233,7 @@ function ConversationItem({
       onClick={onSelect}
     >
       <MessageSquare className={cn("h-4 w-4 shrink-0", isActive ? "text-primary" : "")} />
-      <span className="flex-1 truncate text-sm">{conversation.title}</span>
+      <span className="min-w-0 flex-1 truncate text-sm">{conversation.title}</span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -241,8 +241,8 @@ function ConversationItem({
             size="icon"
             aria-label="Conversation actions"
             className={cn(
-              "hover:bg-background focus-visible:ring-ring data-[state=open]:bg-background h-6 w-6 transition-opacity",
-              "opacity-100",
+              "hover:bg-background focus-visible:ring-ring data-[state=open]:bg-background h-6 w-6 shrink-0 transition-opacity duration-200",
+              "opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100",
               isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
             onClick={(e) => e.stopPropagation()}

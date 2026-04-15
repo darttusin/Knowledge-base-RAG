@@ -136,33 +136,42 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
                   )}
                 </Button>
               </div>
-              <div className="border-border bg-muted/30 rounded-xl border p-4 overflow-x-auto">
-                {source.title.endsWith(".md") ? (
-                  <div
-                    className={cn(
-                      "prose prose-sm dark:prose-invert max-w-none",
-                      "prose-p:leading-relaxed prose-p:my-2 prose-p:text-foreground",
-                      "prose-headings:font-semibold prose-headings:text-foreground",
-                      "prose-h1:text-lg prose-h2:text-base prose-h3:text-sm",
-                      "prose-strong:font-semibold prose-strong:text-foreground",
-                      "prose-code:bg-muted/50 prose-code:text-foreground prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:before:content-none prose-code:after:content-none",
-                      "prose-pre:bg-muted/50 prose-pre:p-3 prose-pre:rounded prose-pre:overflow-x-auto prose-pre:text-xs",
-                      "prose-ul:list-disc prose-ol:list-decimal prose-ul:my-2 prose-ol:my-2",
-                      "prose-li:text-foreground prose-li:my-1",
-                      "prose-a:text-primary prose-a:underline-offset-2 hover:prose-a:underline",
-                      "prose-blockquote:border-l-primary prose-blockquote:italic",
-                      "break-words"
-                    )}
-                  >
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <div className="border-border bg-muted/30 rounded-xl border p-4 overflow-hidden">
+                <div className="text-foreground text-sm leading-relaxed break-words max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                  {source.title.endsWith(".md") ? (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        h1: ({ children }) => <h1 className="text-base font-bold mb-2 mt-4 first:mt-0 break-words">{children}</h1>,
+                        h2: ({ children }) => <h2 className="text-sm font-semibold mb-2 mt-3 first:mt-0 break-words">{children}</h2>,
+                        h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-2 first:mt-0 break-words">{children}</h3>,
+                        p: ({ children }) => <p className="mb-2 break-words">{children}</p>,
+                        ul: ({ children }) => <ul className="list-disc ml-4 mb-2 break-words">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal ml-4 mb-2 break-words">{children}</ol>,
+                        li: ({ children }) => <li className="mb-1 break-words">{children}</li>,
+                        code: ({ className, children }) => {
+                          const isBlock = className?.includes('language-')
+                          return isBlock ? (
+                            <pre className="bg-muted/50 p-2 rounded overflow-x-auto mb-2 text-xs break-words whitespace-pre-wrap">
+                              <code className="break-words">{children}</code>
+                            </pre>
+                          ) : (
+                            <code className="bg-muted/50 px-1 py-0.5 rounded text-xs break-all">{children}</code>
+                          )
+                        },
+                        a: ({ href, children }) => (
+                          <a href={href} className="text-primary underline break-all" target="_blank" rel="noopener noreferrer">
+                            {children}
+                          </a>
+                        ),
+                      }}
+                    >
                       {extendedData.fullContent}
                     </ReactMarkdown>
-                  </div>
-                ) : (
-                  <div className="text-foreground text-sm leading-relaxed whitespace-pre-wrap break-words overflow-wrap-anywhere">
-                    {extendedData.fullContent}
-                  </div>
-                )}
+                  ) : (
+                    <div className="whitespace-pre-wrap break-words">{extendedData.fullContent}</div>
+                  )}
+                </div>
               </div>
             </div>
 

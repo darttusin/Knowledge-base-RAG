@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
 import { EmptyState } from "@/components/empty-state"
 import { useSearch } from "@/hooks/useSearch"
@@ -41,9 +40,9 @@ export function SourcesPanel({ onSourceClick }: SourcesPanelProps) {
         </Button>
       </div>
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex flex-1 flex-col min-h-0">
         {/* Search */}
-        <div className="px-4 pb-3">
+        <div className="shrink-0 px-4 pb-3">
           <div className="relative">
             <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
             <Input
@@ -56,7 +55,7 @@ export function SourcesPanel({ onSourceClick }: SourcesPanelProps) {
         </div>
 
         {/* Retrieved Sources */}
-        <ScrollArea className="flex-1 px-4 pb-4">
+        <div className="flex-1 overflow-y-auto px-4 pb-4">
           {filteredItems.length === 0 ? (
             <EmptyState
               icon={FileText}
@@ -78,7 +77,7 @@ export function SourcesPanel({ onSourceClick }: SourcesPanelProps) {
               ))}
             </div>
           )}
-        </ScrollArea>
+        </div>
       </div>
     </div>
   )

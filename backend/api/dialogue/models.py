@@ -2,6 +2,8 @@ from enum import Enum
 
 from pydantic import BaseModel
 
+from api.shared import SourceReference
+
 
 class IconsEnum(str, Enum):
     database = "database"
@@ -22,12 +24,23 @@ class UpdateDialogue(BaseModel):
     name: str | None = None
 
 
+class MessageResponse(BaseModel):
+    message_id: int
+    parent_message_id: int | None = None
+    user_message: str
+    assistant_response: str | None
+    sources: list[SourceReference] | None = None
+    feedback: str | None
+    created_at: str
+
+
 class DialogueResponse(BaseModel):
     dialogue_id: int
     name: str
     created_at: str
     updated_at: str
     pre_generated_queries: list[PreGeneratedQuery]
+    messages: list[MessageResponse]
 
 
 class ShortDialogue(BaseModel):

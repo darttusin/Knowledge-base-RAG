@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
 import { EmptyState } from "@/components/empty-state"
 import { useSearch } from "@/hooks/useSearch"
@@ -12,7 +11,11 @@ import { FILE_EXTENSION_COLORS } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import { useChatStore } from "@/lib/store/chat-store"
 
-export function SourcesPanel() {
+interface SourcesPanelProps {
+  onSourceClick?: (source: Source) => void
+}
+
+export function SourcesPanel({ onSourceClick }: SourcesPanelProps) {
   const sources = useChatStore((s) => s.selectedSources)
   const closeSources = useChatStore((s) => s.closeSources)
 
@@ -37,9 +40,9 @@ export function SourcesPanel() {
         </Button>
       </div>
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex flex-1 flex-col min-h-0">
         {/* Search */}
-        <div className="px-4 pb-3">
+        <div className="shrink-0 px-4 pb-3">
           <div className="relative">
             <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
             <Input
@@ -52,7 +55,7 @@ export function SourcesPanel() {
         </div>
 
         {/* Retrieved Sources */}
-        <ScrollArea className="flex-1 px-4 pb-4">
+        <div className="flex-1 overflow-y-auto px-4 pb-4">
           {filteredItems.length === 0 ? (
             <EmptyState
               icon={FileText}
@@ -70,11 +73,11 @@ export function SourcesPanel() {
                 {resultCount} document{resultCount !== 1 ? "s" : ""} found
               </p>
               {filteredItems.map((source) => (
-                <SourceCard key={source.id} source={source} />
+                <SourceCard key={source.id} source={source} onClick={onSourceClick} />
               ))}
             </div>
           )}
-        </ScrollArea>
+        </div>
       </div>
     </div>
   )
@@ -82,9 +85,10 @@ export function SourcesPanel() {
 
 interface SourceCardProps {
   source: Source
+  onClick?: (source: Source) => void
 }
 
-function SourceCard({ source }: SourceCardProps) {
+function SourceCard({ source, onClick }: SourceCardProps) {
   const router = useRouter()
 
   const getFileExtension = (title: string) => {
@@ -98,11 +102,15 @@ function SourceCard({ source }: SourceCardProps) {
   const colorClass = FILE_EXTENSION_COLORS[extension] || FILE_EXTENSION_COLORS.DOC
 
   const handleOpen = () => {
-    router.push(`/documents?id=${source.documentId}`)
+    if (onClick) {
+      onClick(source)
+    } else {
+      router.push(`/documents?id=${source.documentId}`)
+    }
   }
 
   return (
-    <div className="group hover:bg-muted/50 cursor-pointer rounded-xl p-3 transition-colors">
+    <div className="group hover:bg-muted/50 cursor-pointer rounded-xl p-3 transition-colors" onClick={handleOpen}>
       <div className="flex items-start gap-3">
         <div
           className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", colorClass)}
@@ -116,7 +124,12 @@ function SourceCard({ source }: SourceCardProps) {
               {Math.round(source.relevance * 100)}%
             </span>
           </div>
-          <p className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-relaxed">
+          {source.folderPath && (
+            <p className="text-muted-foreground mt-0.5 truncate text-xs">
+              📁 {source.folderPath}
+            </p>
+          )}
+          <p className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-relaxed break-words">
             {source.content}
           </p>
         </div>
@@ -126,7 +139,10 @@ function SourceCard({ source }: SourceCardProps) {
           variant="ghost"
           size="sm"
           className="text-muted-foreground hover:text-foreground h-7 gap-1.5 text-xs"
-          onClick={handleOpen}
+          onClick={(e) => {
+            e.stopPropagation()
+            handleOpen()
+          }}
         >
           <ExternalLink className="h-3 w-3" />
           Open

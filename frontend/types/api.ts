@@ -1,5 +1,7 @@
 // API request/response types and contracts
 
+import type { Message } from "@/lib/types"
+
 // ============================================
 // Base API types
 // ============================================
@@ -27,6 +29,7 @@ export interface PaginationParams {
 export interface PaginatedResponse<T> {
   items: T[]
   total: number
+  totalSize?: number
   page: number
   limit: number
   hasMore: boolean
@@ -79,6 +82,8 @@ export interface ConversationListItem {
   messageCount: number
   createdAt: string
   updatedAt: string
+  messages?: Message[] // Populated when fetching single conversation
+  preGeneratedQueries?: Array<{ query: string; icon: "database" | "doc" | "browser" }>
 }
 
 export interface ConversationResponse {
@@ -126,11 +131,13 @@ export interface MessageVersionResponse {
 export interface SourceResponse {
   id: string
   title: string
+  documentName?: string  // Alternative field name from backend
   content: string
   relevance: number
   type: "document" | "database" | "api"
   fileType?: "md" | "txt"
   uploadedAt?: string
+  folderPath?: string
 }
 
 export interface SourceDetailResponse extends SourceResponse {

@@ -8,16 +8,19 @@ export interface Message {
   id: string
   role: "user" | "assistant"
   content: string
+  status?: "streaming" | "completed" | "error" | "cancelled"
   sources?: Source[]
   timestamp: Date
   isEdited?: boolean
   editHistory?: MessageVersion[]
   parentMessageId?: string
+  feedback?: "like" | "dislike"
 }
 
 export interface Source {
   id: string
   title: string
+  documentName?: string  // Alternative field name from backend (use this if available)
   content: string
   relevance: number
   type: "document"
@@ -28,10 +31,16 @@ export interface Source {
   documentId: string
 }
 
+export interface PreGeneratedQuery {
+  query: string
+  icon: "database" | "doc" | "browser"
+}
+
 export interface Conversation {
   id: string
   title: string
-  messages: Message[]
+  messages?: Message[] // undefined means not loaded yet, [] means loaded but empty
+  preGeneratedQueries?: PreGeneratedQuery[]
   createdAt: Date
   updatedAt: Date
 }

@@ -1,15 +1,20 @@
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from db import Dialogue
+from services.rag_service import RagService
+from services.title_service import generate_dialogue_title
 
 from .models import (
     CreateDialogue,
     DialogueResponse,
     IconsEnum,
+    MessageResponse,
     PreGeneratedQuery,
     ShortDialogue,
+    SourceReference,
     UpdateDialogue,
 )
 
@@ -17,10 +22,9 @@ from .models import (
 def generate_pre_generated_queries() -> list[PreGeneratedQuery]:
     return [
         PreGeneratedQuery(
-            query="Как создать нейронную сеть в PyTorch?", icon=IconsEnum.doc
+            query="What's the difference between torch.nn.Module and torch.nn.functional?",
+            icon=IconsEnum.database,
         ),
-        PreGeneratedQuery(query="Что такое tensor в PyTorch?", icon=IconsEnum.database),
-        PreGeneratedQuery(query="Как использовать DataLoader?", icon=IconsEnum.browser),
     ]
 
 
@@ -41,6 +45,7 @@ async def create_dialogue(
         created_at=new_dialogue.created_at.isoformat(),
         updated_at=new_dialogue.updated_at.isoformat(),
         pre_generated_queries=pre_generated,
+        messages=[],
     )
 
 
@@ -48,7 +53,9 @@ async def get_dialogue(
     dialogue_id: int, user_id: int, db: AsyncSession
 ) -> DialogueResponse:
     result = await db.execute(
-        select(Dialogue).where(Dialogue.id == dialogue_id, Dialogue.user_id == user_id)
+        select(Dialogue)
+        .where(Dialogue.id == dialogue_id, Dialogue.user_id == user_id)
+        .options(selectinload(Dialogue.messages))
     )
     dialogue = result.scalar_one_or_none()
 
@@ -59,12 +66,43 @@ async def get_dialogue(
 
     pre_generated = generate_pre_generated_queries()
 
+    import json
+
+    messages = []
+    for msg in dialogue.messages:
+        # Parse sources from JSON
+        sources = None
+        if msg.sources:
+            try:
+                sources_data = json.loads(msg.sources)
+                # Handle both old format (list of strings) and new format (list of SourceReference dicts)
+                if sources_data and isinstance(sources_data[0], dict):
+                    sources = [SourceReference(**src) for src in sources_data]
+                else:
+                    # Old format - list of paths, skip for now or convert to empty
+                    sources = None
+            except (json.JSONDecodeError, KeyError, TypeError):
+                sources = None
+
+        messages.append(
+            MessageResponse(
+                message_id=msg.id,
+                parent_message_id=msg.parent_message_id,
+                user_message=msg.user_message,
+                assistant_response=msg.assistant_response,
+                sources=sources,
+                feedback=msg.feedback,
+                created_at=msg.created_at.isoformat(),
+            )
+        )
+
     return DialogueResponse(
         dialogue_id=dialogue.id,
         name=dialogue.name,
         created_at=dialogue.created_at.isoformat(),
         updated_at=dialogue.updated_at.isoformat(),
         pre_generated_queries=pre_generated,
+        messages=messages,
     )
 
 

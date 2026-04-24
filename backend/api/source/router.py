@@ -39,11 +39,19 @@ async def upload_source(
         401: {"model": ErrorMessage, "description": "Unauthorized"},
     },
     summary="Получить список источников",
-    description="Возвращает список всех источников пользователя с пагинацией. Поддерживает фильтрацию по имени. Требует JWT токен.",
+    description="Возвращает список всех источников пользователя с пагинацией. Поддерживает полнотекстовый поиск по имени и/или содержимому. Требует JWT токен.",
 )
 async def get_sources_list(
     query: str | None = Query(
-        None, description="Поисковый запрос для фильтрации по имени"
+        None, description="Поисковый запрос для полнотекстового поиска"
+    ),
+    search_in: str = Query(
+        "both",
+        regex="^(name|content|both)$",
+        description="Где искать: 'name' (только в названии), 'content' (только в содержимом), 'both' (в обоих)"
+    ),
+    folder_id: int | None = Query(
+        None, description="ID папки для фильтрации (null = все документы)"
     ),
     page: int = Query(1, ge=1, description="Номер страницы"),
     limit: int = Query(
@@ -52,7 +60,7 @@ async def get_sources_list(
     user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> SourcesList:
-    return await controller.get_sources_list(user_id, query, page, limit, db)
+    return await controller.get_sources_list(user_id, query, folder_id, page, limit, search_in, db)
 
 
 @router.get(

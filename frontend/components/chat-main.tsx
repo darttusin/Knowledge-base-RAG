@@ -1,19 +1,21 @@
 "use client"
 
-import { useState } from "react"
 import { ChatHeader } from "@/components/chat/chat-header"
 import { MessageList } from "@/components/chat/message-list"
 import { MessageInput } from "@/components/chat/message-input"
-import { SourceDetailModal } from "@/components/source-detail-modal"
+import { useChatStore } from "@/lib/store/chat-store"
 import type { Source } from "@/lib/types"
 
-export function ChatMain() {
-  const [selectedSource, setSelectedSource] = useState<Source | null>(null)
-  const [sourceModalOpen, setSourceModalOpen] = useState(false)
+export interface ChatMainProps {
+  onSourceClick?: (source: Source) => void
+}
 
-  const handleSourceClick = (source: Source) => {
-    setSelectedSource(source)
-    setSourceModalOpen(true)
+export function ChatMain({ onSourceClick }: ChatMainProps) {
+  const sendMessage = useChatStore((s) => s.sendMessage)
+
+  const handleSuggestionClick = async (suggestion: string) => {
+    // Send message will auto-create conversation if needed
+    await sendMessage(suggestion)
   }
 
   return (
@@ -23,15 +25,9 @@ export function ChatMain() {
     >
       <ChatHeader />
 
-      <MessageList onSourceClick={handleSourceClick} />
+      <MessageList onSourceClick={onSourceClick} onSuggestionClick={handleSuggestionClick} />
 
       <MessageInput />
-
-      <SourceDetailModal
-        source={selectedSource}
-        open={sourceModalOpen}
-        onOpenChange={setSourceModalOpen}
-      />
     </div>
   )
 }

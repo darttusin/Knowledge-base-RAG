@@ -10,8 +10,9 @@ import type { Message, Source } from "@/lib/types"
 interface MessageGroupProps {
   userMessage: Message
   responses: Message[]
-  onSourceClick: (source: Source) => void
+  onSourceClick?: (source: Source) => void
   onEditMessage: (messageId: string, newContent: string) => void
+  onRegenerateMessage: (messageId: string, parentMessageId?: number) => void
 }
 
 export function MessageGroup({
@@ -19,6 +20,7 @@ export function MessageGroup({
   responses,
   onSourceClick,
   onEditMessage,
+  onRegenerateMessage,
 }: MessageGroupProps) {
   const [currentResponseIndex, setCurrentResponseIndex] = useState(responses.length - 1)
 
@@ -30,13 +32,25 @@ export function MessageGroup({
   const currentResponse = responses[currentResponseIndex]
   const hasMultipleResponses = responses.length > 1
 
+  // Regenerate by re-sending the same user message
+  const handleRegenerate = () => {
+    const firstResponse = responses[0]
+    const parsedParentMessageId = firstResponse ? parseInt(firstResponse.id, 10) : Number.NaN
+    const parentMessageId = Number.isNaN(parsedParentMessageId) ? undefined : parsedParentMessageId
+    onRegenerateMessage(userMessage.id, parentMessageId)
+  }
+
   return (
     <div className="space-y-4 sm:space-y-6">
       <UserMessageBubble message={userMessage} onEditMessage={onEditMessage} />
 
       {currentResponse && (
         <div className="space-y-2">
-          <AssistantMessageBubble message={currentResponse} onSourceClick={onSourceClick} />
+          <AssistantMessageBubble
+            message={currentResponse}
+            onSourceClick={onSourceClick}
+            onRegenerate={handleRegenerate}
+          />
 
           {hasMultipleResponses && (
             <div className="ml-9 flex items-center gap-1 sm:ml-12">
@@ -64,9 +78,6 @@ export function MessageGroup({
               >
                 <ChevronRight className="h-3.5 w-3.5" />
               </Button>
-              <span className="text-muted-foreground ml-1 hidden text-xs sm:inline">
-                {currentResponseIndex === responses.length - 1 ? "Current" : "Previous"}
-              </span>
             </div>
           )}
         </div>

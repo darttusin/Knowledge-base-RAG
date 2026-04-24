@@ -1,9 +1,9 @@
 "use client"
 
-import { useRouter } from "next/navigation"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { useCopyFeedback } from "@/hooks/useCopyFeedback"
@@ -12,9 +12,6 @@ import {
   Database,
   Globe,
   Copy,
-  ExternalLink,
-  Calendar,
-  User,
   Hash,
   CheckCircle2,
   Clock,
@@ -39,7 +36,6 @@ const SOURCE_TYPE_ICONS = {
 }
 
 export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailModalProps) {
-  const router = useRouter()
   const { copied, copy } = useCopyFeedback()
 
   if (!source) return null
@@ -61,10 +57,6 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
 
   const handleCopy = () => copy(extendedData.fullContent)
 
-  const handleOpenOriginal = () => {
-    router.push(`/documents?id=${source.documentId}`)
-  }
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] max-w-2xl gap-0 overflow-hidden p-0">
@@ -79,60 +71,29 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
               <Icon className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <DialogTitle className="text-foreground text-lg font-semibold">
-                    {source.title}
-                  </DialogTitle>
-                  <p className="text-muted-foreground mt-0.5 text-sm">{typeLabel} Source</p>
-                </div>
-                <Badge className="bg-primary/10 text-primary border-primary/20 hover:bg-primary/15 shrink-0">
-                  {Math.round(source.relevance * 100)}% Relevance
-                </Badge>
-              </div>
+              <DialogTitle className="text-foreground text-lg font-semibold">
+                {source.title}
+              </DialogTitle>
+              <p className="text-muted-foreground mt-0.5 text-sm">{typeLabel} Source</p>
             </div>
           </div>
         </DialogHeader>
 
-        <ScrollArea className="max-h-[calc(85vh-180px)] flex-1">
+        <ScrollArea className="max-h-[calc(85vh-120px)] flex-1">
           <div className="space-y-6 p-6">
-            {/* Meta info */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex items-center gap-2 text-sm">
-                <User className="text-muted-foreground h-4 w-4" />
-                <span className="text-muted-foreground">Author:</span>
-                <span className="text-foreground font-medium">{extendedData.author}</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <Calendar className="text-muted-foreground h-4 w-4" />
-                <span className="text-muted-foreground">Updated:</span>
-                <span className="text-foreground font-medium">{extendedData.updatedAt}</span>
-              </div>
-              <div className="col-span-2 flex items-center gap-2 text-sm">
-                <Hash className="text-muted-foreground h-4 w-4" />
-                <span className="text-muted-foreground">Path:</span>
-                <code className="bg-muted text-foreground truncate rounded px-2 py-0.5 font-mono text-xs">
-                  {extendedData.path}
-                </code>
-              </div>
-            </div>
-
-            {/* Tags */}
-            {extendedData.tags.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {extendedData.tags.map((tag) => (
-                  <Badge
-                    key={tag}
-                    variant="secondary"
-                    className="bg-muted/50 hover:bg-muted text-xs"
-                  >
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
+            {/* Folder path if exists */}
+            {source.folderPath && (
+              <>
+                <div className="flex items-center gap-2 text-sm min-w-0">
+                  <Hash className="text-muted-foreground h-4 w-4 shrink-0" />
+                  <span className="text-muted-foreground shrink-0">Folder:</span>
+                  <code className="bg-muted text-foreground rounded px-2 py-0.5 font-mono text-xs break-all overflow-wrap-anywhere">
+                    {source.folderPath}
+                  </code>
+                </div>
+                <Separator />
+              </>
             )}
-
-            <Separator />
 
             {/* Content */}
             <div>
@@ -160,10 +121,42 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
                   )}
                 </Button>
               </div>
-              <div className="border-border bg-muted/30 rounded-xl border p-4">
-                <pre className="text-foreground font-sans text-sm leading-relaxed whitespace-pre-wrap">
-                  {extendedData.fullContent}
-                </pre>
+              <div className="border-border bg-muted/30 rounded-xl border p-4 overflow-hidden max-w-full">
+                <div className="text-foreground text-sm leading-relaxed max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                  {source.title.endsWith(".md") ? (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        h1: ({ children }) => <h1 className="text-base font-bold mb-2 mt-4 first:mt-0 max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{children}</h1>,
+                        h2: ({ children }) => <h2 className="text-sm font-semibold mb-2 mt-3 first:mt-0 max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{children}</h2>,
+                        h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-2 first:mt-0 max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{children}</h3>,
+                        p: ({ children }) => <p className="mb-2 max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{children}</p>,
+                        ul: ({ children }) => <ul className="list-disc ml-4 mb-2 max-w-full">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal ml-4 mb-2 max-w-full">{children}</ol>,
+                        li: ({ children }) => <li className="mb-1 max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{children}</li>,
+                        code: ({ className, children }) => {
+                          const isBlock = className?.includes('language-')
+                          return isBlock ? (
+                            <pre className="bg-muted/50 p-2 rounded mb-2 text-xs max-w-full whitespace-pre-wrap" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                              <code className="max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{children}</code>
+                            </pre>
+                          ) : (
+                            <code className="bg-muted/50 px-1 py-0.5 rounded text-xs break-all max-w-full">{children}</code>
+                          )
+                        },
+                        a: ({ href, children }) => (
+                          <a href={href} className="text-primary underline break-all max-w-full" target="_blank" rel="noopener noreferrer">
+                            {children}
+                          </a>
+                        ),
+                      }}
+                    >
+                      {extendedData.fullContent}
+                    </ReactMarkdown>
+                  ) : (
+                    <div className="whitespace-pre-wrap max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{extendedData.fullContent}</div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -224,22 +217,6 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
             )}
           </div>
         </ScrollArea>
-
-        {/* Footer */}
-        <div className="border-border bg-card/50 flex items-center justify-between border-t p-4">
-          <p className="text-muted-foreground text-xs">
-            Source retrieved from your private database
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-2 bg-transparent"
-            onClick={handleOpenOriginal}
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Open Original
-          </Button>
-        </div>
       </DialogContent>
     </Dialog>
   )

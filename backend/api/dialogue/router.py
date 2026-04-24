@@ -9,6 +9,7 @@ from .models import (
     CreateDialogue,
     DialogueResponse,
     ErrorMessage,
+    PreGeneratedQuery,
     ShortDialogue,
     UpdateDialogue,
 )
@@ -106,3 +107,13 @@ async def delete_dialogue(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     await controller.delete_dialogue(dialogue_id, user_id, db)
+
+
+@router.get(
+    "/queries/pre-generated",
+    response_model=list[PreGeneratedQuery],
+    summary="Получить предзаготовленные запросы",
+    description="Возвращает список предзаготовленных запросов для отображения в UI.",
+)
+async def get_pre_generated_queries() -> list[PreGeneratedQuery]:
+    return controller.generate_pre_generated_queries()

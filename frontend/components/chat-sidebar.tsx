@@ -20,7 +20,6 @@ import {
   Edit2,
   Database,
   Settings,
-  HelpCircle,
   ChevronLeft,
   Sparkles,
 } from "lucide-react"
@@ -37,6 +36,7 @@ export function ChatSidebar() {
   const isOpen = useChatStore((s) => s.sidebarOpen)
   const selectConversation = useChatStore((s) => s.selectConversation)
   const createConversation = useChatStore((s) => s.createConversation)
+  const updateConversation = useChatStore((s) => s.updateConversation)
   const deleteConversation = useChatStore((s) => s.deleteConversation)
   const toggleSidebar = useChatStore((s) => s.toggleSidebar)
 
@@ -104,6 +104,7 @@ export function ChatSidebar() {
                 conversation={conversation}
                 isActive={activeConversation?.id === conversation.id}
                 onSelect={() => selectConversation(conversation)}
+                onRename={(newTitle) => updateConversation(conversation.id, newTitle)}
                 onDelete={() => deleteConversation(conversation.id)}
               />
             ))}
@@ -121,6 +122,7 @@ export function ChatSidebar() {
                 conversation={conversation}
                 isActive={activeConversation?.id === conversation.id}
                 onSelect={() => selectConversation(conversation)}
+                onRename={(newTitle) => updateConversation(conversation.id, newTitle)}
                 onDelete={() => deleteConversation(conversation.id)}
               />
             ))}
@@ -138,6 +140,7 @@ export function ChatSidebar() {
                 conversation={conversation}
                 isActive={activeConversation?.id === conversation.id}
                 onSelect={() => selectConversation(conversation)}
+                onRename={(newTitle) => updateConversation(conversation.id, newTitle)}
                 onDelete={() => deleteConversation(conversation.id)}
               />
             ))}
@@ -164,13 +167,6 @@ export function ChatSidebar() {
             Settings
           </Button>
         </Link>
-        <Button
-          variant="ghost"
-          className="text-muted-foreground hover:text-foreground hover:bg-sidebar-accent h-9 w-full justify-start gap-2"
-        >
-          <HelpCircle className="h-4 w-4" />
-          Help
-        </Button>
       </div>
     </div>
   )
@@ -180,10 +176,52 @@ interface ConversationItemProps {
   conversation: Conversation
   isActive: boolean
   onSelect: () => void
+  onRename: (newTitle: string) => void
   onDelete: () => void
 }
 
-function ConversationItem({ conversation, isActive, onSelect, onDelete }: ConversationItemProps) {
+function ConversationItem({
+  conversation,
+  isActive,
+  onSelect,
+  onRename,
+  onDelete,
+}: ConversationItemProps) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editValue, setEditValue] = useState(conversation.title)
+
+  const handleRename = () => {
+    if (editValue.trim() && editValue !== conversation.title) {
+      onRename(editValue.trim())
+    }
+    setIsEditing(false)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleRename()
+    } else if (e.key === "Escape") {
+      setEditValue(conversation.title)
+      setIsEditing(false)
+    }
+  }
+
+  if (isEditing) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg px-2 py-2">
+        <Input
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={handleRename}
+          onKeyDown={handleKeyDown}
+          className="h-7 text-sm"
+          autoFocus
+          onClick={(e) => e.stopPropagation()}
+        />
+      </div>
+    )
+  }
+
   return (
     <div
       className={cn(
@@ -195,20 +233,30 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete }: Conver
       onClick={onSelect}
     >
       <MessageSquare className={cn("h-4 w-4 shrink-0", isActive ? "text-primary" : "")} />
-      <span className="flex-1 truncate text-sm">{conversation.title}</span>
+      <span className="min-w-0 flex-1 truncate text-sm">{conversation.title}</span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
             size="icon"
-            className="hover:bg-background h-6 w-6 opacity-0 group-hover:opacity-100"
+            aria-label="Conversation actions"
+            className={cn(
+              "hover:bg-background focus-visible:ring-ring data-[state=open]:bg-background h-6 w-6 shrink-0 transition-opacity duration-200",
+              "opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100",
+              isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
             onClick={(e) => e.stopPropagation()}
           >
-            <MoreHorizontal className="h-3 w-3" />
+            <MoreHorizontal className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-40">
-          <DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsEditing(true)
+            }}
+          >
             <Edit2 className="mr-2 h-4 w-4" />
             Rename
           </DropdownMenuItem>

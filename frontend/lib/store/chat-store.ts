@@ -1,8 +1,17 @@
 import { create } from "zustand"
 import { devtools } from "zustand/middleware"
-import type { Conversation, Message, Source, MessageVersion } from "@/lib/types"
-import { mockSources, mockConversations } from "@/lib/mock-data"
-import { SIMULATED_RESPONSE_DELAY, EDIT_RESPONSE_DELAY } from "@/lib/constants"
+import type { Conversation, Message, Source, PreGeneratedQuery } from "@/lib/types"
+import {
+  getConversations,
+  getConversation,
+  createConversation,
+  updateConversation as apiUpdateConversation,
+  deleteConversation as apiDeleteConversation,
+  sendMessageStream as apiSendMessageStream,
+  getDocuments,
+  getPreGeneratedQueries,
+} from "@/lib/api"
+import { toast } from "sonner"
 
 interface ChatState {
   // State
@@ -12,16 +21,28 @@ interface ChatState {
   selectedSources: Source[]
   sidebarOpen: boolean
   isWaitingForResponse: boolean
-  selectedFolderIds: string[] // Empty means search all folders
+  waitingConversationId: string | null
+  selectedFolderIds: string[]
+  totalDocuments: number
+  isLoading: boolean
+  error: string | null
+  preGeneratedQueries: PreGeneratedQuery[]
 }
 
 interface ChatActions {
-  // Actions
-  createConversation: () => void
-  selectConversation: (conversation: Conversation) => void
-  deleteConversation: (id: string) => void
-  sendMessage: (content: string) => void
-  editMessage: (messageId: string, newContent: string) => void
+  // API actions
+  loadConversations: () => Promise<void>
+  loadDocumentCount: () => Promise<void>
+  loadPreGeneratedQueries: () => Promise<void>
+  createConversation: () => Promise<void>
+  selectConversation: (conversation: Conversation) => Promise<void>
+  updateConversation: (id: string, title: string) => Promise<void>
+  deleteConversation: (id: string) => Promise<void>
+  sendMessage: (content: string) => Promise<void>
+  editMessage: (messageId: string, newContent: string) => Promise<void>
+  regenerateMessage: (messageId: string, parentMessageId?: number) => Promise<void>
+
+  // UI actions
   toggleSources: () => void
   closeSources: () => void
   toggleSidebar: () => void
@@ -33,239 +54,440 @@ interface ChatActions {
 
 type ChatStore = ChatState & ChatActions
 
+/**
+ * Module-level abort controller for managing active SSE streams.
+ *
+ * This is intentionally kept outside Zustand state for performance reasons:
+ * - AbortController mutations don't need to trigger React re-renders
+ * - Allows immediate cancellation without state updates
+ * - Prevents race conditions during rapid message sends
+ *
+ * Only one stream can be active at a time to prevent message interleaving.
+ */
+let _activeStreamController: AbortController | null = null
+
+interface StreamSourceReference {
+  source_id: number
+  document_name: string
+  chunk_text: string
+  relevance_score: number
+  folder_path?: string | null
+}
+
+const mapSources = (sources: StreamSourceReference[], messageId: string): Source[] =>
+  sources.map((sourceRef, idx) => ({
+    id: `source-${messageId}-${idx}`,
+    title: sourceRef.document_name,
+    content: sourceRef.chunk_text,
+    relevance: sourceRef.relevance_score,
+    type: "document" as const,
+    documentId: sourceRef.source_id.toString(),
+    folderPath: sourceRef.folder_path || undefined,
+  }))
+
 export const useChatStore = create<ChatStore>()(
   devtools(
     (set, get) => ({
       // Initial state
-      conversations: mockConversations,
-      activeConversation: mockConversations[0],
+      conversations: [],
+      activeConversation: null,
       showSources: true,
-      selectedSources: mockSources,
+      selectedSources: [],
       sidebarOpen: true,
       isWaitingForResponse: false,
-      selectedFolderIds: [], // Empty array means search all folders
+      waitingConversationId: null,
+      selectedFolderIds: [],
+      totalDocuments: 0,
+      isLoading: false,
+      error: null,
+      preGeneratedQueries: [],
 
-      // Actions
-      createConversation: () => {
-        const newConvo: Conversation = {
-          id: Date.now().toString(),
-          title: "New Conversation",
-          messages: [],
-          createdAt: new Date(),
-          updatedAt: new Date(),
+      // Load conversations from API
+      loadConversations: async () => {
+        set({ isLoading: true, error: null })
+
+        const result = await getConversations()
+
+        if (result.success) {
+          const conversations: Conversation[] = result.data.map((conv) => ({
+            id: conv.id,
+            title: conv.title,
+            messages: undefined, // Mark as not loaded yet
+            createdAt: new Date(conv.createdAt),
+            updatedAt: new Date(conv.updatedAt),
+          }))
+
+          set({
+            conversations,
+            // Don't auto-select first conversation - let URL handling or user interaction do it
+            isLoading: false,
+          })
+        } else {
+          set({ error: result.error, isLoading: false })
+          toast.error(`Failed to load conversations: ${result.error}`)
         }
-        set((state) => ({
-          conversations: [newConvo, ...state.conversations],
-          activeConversation: newConvo,
-          selectedSources: [],
-        }))
       },
 
-      selectConversation: (conversation) => {
+      // Load document count
+      loadDocumentCount: async () => {
+        const result = await getDocuments({ page: 1, limit: 1 })
+
+        if (result.success) {
+          set({ totalDocuments: result.data.total })
+        }
+      },
+
+      // Load pre-generated queries
+      loadPreGeneratedQueries: async () => {
+        const result = await getPreGeneratedQueries()
+
+        if (result.success) {
+          set({ preGeneratedQueries: result.data })
+        }
+      },
+
+      // Create new conversation
+      createConversation: async () => {
+        const result = await createConversation()
+
+        if (result.success) {
+          const newConvo: Conversation = {
+            id: result.data.id,
+            title: result.data.title,
+            messages: [],
+            preGeneratedQueries: result.data.preGeneratedQueries,
+            createdAt: new Date(result.data.createdAt),
+            updatedAt: new Date(result.data.updatedAt),
+          }
+
+          set((state) => ({
+            conversations: [newConvo, ...state.conversations],
+            activeConversation: newConvo,
+            selectedSources: [],
+            preGeneratedQueries: result.data.preGeneratedQueries || [],
+          }))
+
+          toast.success("New conversation created")
+        } else {
+          toast.error(`Failed to create conversation: ${result.error}`)
+        }
+      },
+
+      selectConversation: async (conversation) => {
+        // Immediately set as active (for UI responsiveness)
         set({ activeConversation: conversation })
+
+        // Load full conversation with messages if not already loaded
+        // undefined means not loaded, [] means loaded but empty
+        if (conversation.messages === undefined) {
+          set({ isLoading: true })
+
+          const result = await getConversation(conversation.id)
+
+          if (result.success) {
+            const fullConversation: Conversation = {
+              id: result.data.id,
+              title: result.data.title,
+              messages: result.data.messages || [],
+              preGeneratedQueries: result.data.preGeneratedQueries,
+              createdAt: new Date(result.data.createdAt),
+              updatedAt: new Date(result.data.updatedAt),
+            }
+
+            // Collect all sources from all messages
+            const allSources: Source[] = []
+            fullConversation.messages?.forEach((msg) => {
+              if (msg.sources) {
+                allSources.push(...msg.sources)
+              }
+            })
+
+            set((state) => ({
+              activeConversation: fullConversation,
+              conversations: state.conversations.map((c) =>
+                c.id === fullConversation.id ? fullConversation : c
+              ),
+              selectedSources: allSources,
+              preGeneratedQueries: result.data.preGeneratedQueries || state.preGeneratedQueries,
+              isLoading: false,
+            }))
+          } else {
+            // On error, still set as active but with empty messages
+            set({
+              activeConversation: { ...conversation, messages: [] },
+              selectedSources: [],
+              isLoading: false,
+            })
+            toast.error(`Failed to load conversation: ${result.error}`)
+          }
+        } else {
+          // If already loaded, still update selectedSources
+          const allSources: Source[] = []
+          conversation.messages?.forEach((msg) => {
+            if (msg.sources) {
+              allSources.push(...msg.sources)
+            }
+          })
+          set({ selectedSources: allSources })
+        }
       },
 
-      deleteConversation: (id) => {
-        const { conversations, activeConversation } = get()
-        const newConversations = conversations.filter((c) => c.id !== id)
-        set({
-          conversations: newConversations,
-          activeConversation:
-            activeConversation?.id === id ? newConversations[0] || null : activeConversation,
-        })
+      // Update conversation (rename)
+      updateConversation: async (id, title) => {
+        const result = await apiUpdateConversation(id, title)
+
+        if (result.success) {
+          set((state) => ({
+            conversations: state.conversations.map((c) => (c.id === id ? { ...c, title } : c)),
+            activeConversation:
+              state.activeConversation?.id === id
+                ? { ...state.activeConversation, title }
+                : state.activeConversation,
+          }))
+
+          toast.success("Conversation renamed")
+        } else {
+          toast.error(`Failed to rename conversation: ${result.error}`)
+        }
       },
 
-      sendMessage: (content) => {
-        const { activeConversation } = get()
-        if (!activeConversation) return
+      // Delete conversation
+      deleteConversation: async (id) => {
+        const result = await apiDeleteConversation(id)
+
+        if (result.success) {
+          const { conversations, activeConversation } = get()
+          const newConversations = conversations.filter((c) => c.id !== id)
+
+          set({
+            conversations: newConversations,
+            activeConversation:
+              activeConversation?.id === id ? newConversations[0] || null : activeConversation,
+          })
+
+          toast.success("Conversation deleted")
+        } else {
+          toast.error(`Failed to delete conversation: ${result.error}`)
+        }
+      },
+
+      // Send message
+      sendMessage: async (content) => {
+        let { activeConversation } = get()
+
+        // Auto-create conversation if none exists
+        if (!activeConversation) {
+          const createResult = await createConversation()
+
+          if (!createResult.success) {
+            toast.error(`Failed to create conversation: ${createResult.error}`)
+            return
+          }
+
+          const newConvo: Conversation = {
+            id: createResult.data.id,
+            title: createResult.data.title,
+            messages: [],
+            preGeneratedQueries: createResult.data.preGeneratedQueries,
+            createdAt: new Date(createResult.data.createdAt),
+            updatedAt: new Date(createResult.data.updatedAt),
+          }
+
+          set((state) => ({
+            conversations: [newConvo, ...state.conversations],
+            activeConversation: newConvo,
+            preGeneratedQueries: createResult.data.preGeneratedQueries || [],
+          }))
+
+          activeConversation = newConvo
+        }
 
         const userMessage: Message = {
-          id: Date.now().toString(),
+          id: crypto.randomUUID(),
           role: "user",
           content,
           timestamp: new Date(),
         }
 
-        // Add user message
+        // Add user message immediately
         set((state) => ({
-          activeConversation: state.activeConversation
-            ? {
-                ...state.activeConversation,
-                messages: [...state.activeConversation.messages, userMessage],
-                updatedAt: new Date(),
-              }
-            : null,
-          isWaitingForResponse: true,
-        }))
-
-        // Simulate AI response
-        setTimeout(() => {
-          const assistantMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            role: "assistant",
-            content: `I've analyzed your uploaded documents and found relevant information. Based on the retrieved data, here's what I found:
-
-The data indicates significant trends in your requested area. I've identified **3 relevant sources** that support this analysis.
-
-\`\`\`python
-import numpy as np
-import matplotlib.pyplot as plt
-
-# Sales data by region
-regions = ['North', 'South', 'East', 'West']
-sales_q2 = np.array([1.2, 0.9, 1.5, 1.1])
-sales_q3 = np.array([1.8, 1.1, 1.9, 1.4])
-
-# Calculate growth
-growth = (sales_q3 - sales_q2) / sales_q2 * 100
-
-# Create bar chart
-x = np.arange(len(regions))
-width = 0.35
-
-fig, ax = plt.subplots(figsize=(8, 5))
-bar1 = ax.bar(x - width/2, sales_q2, width, label='Q2', color='#6366f1')
-bar2 = ax.bar(x + width/2, sales_q3, width, label='Q3', color='#10b981')
-
-ax.set_ylabel('Revenue ($M)')
-ax.set_title('Q2 vs Q3 Revenue by Region')
-ax.set_xticks(x)
-ax.set_xticklabels(regions)
-ax.legend()
-
-# Add growth labels
-for i, (g, y) in enumerate(zip(growth, sales_q3)):
-    ax.annotate(f'+{g:.0f}%', xy=(i + width/2, y), ha='center', va='bottom', fontsize=9, color='green')
-
-plt.tight_layout()
-plt.show()
-
-print(f"Total Q3 Revenue: \${sales_q3.sum():.1f}M")
-print(f"Best region: {regions[np.argmax(growth)]} (+{growth.max():.0f}%)")
-\`\`\`
-
-Would you like me to dive deeper into any specific aspect?`,
-            sources: mockSources,
-            timestamp: new Date(),
-          }
-
-          set((state) => ({
-            activeConversation: state.activeConversation
+          activeConversation:
+            state.activeConversation?.id === activeConversation.id
               ? {
                   ...state.activeConversation,
-                  messages: [...state.activeConversation.messages, assistantMessage],
+                  messages: [...(state.activeConversation.messages || []), userMessage],
                   updatedAt: new Date(),
                 }
-              : null,
-            selectedSources: mockSources,
-            isWaitingForResponse: false,
-          }))
-        }, SIMULATED_RESPONSE_DELAY)
-      },
+              : state.activeConversation,
+          conversations: state.conversations.map((c) =>
+            c.id === activeConversation.id
+              ? {
+                  ...c,
+                  messages: [...(c.messages || []), userMessage],
+                  updatedAt: new Date(),
+                }
+              : c
+          ),
+          isWaitingForResponse: true,
+          waitingConversationId: activeConversation.id,
+        }))
 
-      editMessage: (messageId, newContent) => {
-        const { activeConversation } = get()
-        if (!activeConversation) return
+        // Check if this is first message (for title update)
+        const isFirstMessage = (activeConversation.messages?.length || 0) === 0
 
-        const messages = activeConversation.messages
-        const messageIndex = messages.findIndex((m) => m.id === messageId)
-        if (messageIndex === -1) return
-
-        const originalMessage = messages[messageIndex]
-        const responseMessage = messages[messageIndex + 1]
-
-        // Create edit history entry
-        const historyEntry: MessageVersion = {
-          content: originalMessage.content,
-          timestamp: originalMessage.timestamp,
-          responseId: responseMessage?.id,
-        }
-
-        // Update the message with edit history
-        const updatedMessage: Message = {
-          ...originalMessage,
-          content: newContent,
-          isEdited: true,
-          editHistory: [...(originalMessage.editHistory || []), historyEntry],
+        const tempAssistantId = `assistant-stream-${crypto.randomUUID()}`
+        const tempAssistant: Message = {
+          id: tempAssistantId,
+          role: "assistant",
+          content: "",
+          status: "streaming" as const,
           timestamp: new Date(),
         }
 
-        // Create updated messages array
-        const newMessages = [...messages]
-        newMessages[messageIndex] = updatedMessage
+        set((state) => ({
+          activeConversation:
+            state.activeConversation?.id === activeConversation.id
+              ? {
+                  ...state.activeConversation,
+                  messages: [...(state.activeConversation.messages || []), tempAssistant],
+                }
+              : state.activeConversation,
+          conversations: state.conversations.map((c) =>
+            c.id === activeConversation.id
+              ? { ...c, messages: [...(c.messages || []), tempAssistant] }
+              : c
+          ),
+        }))
 
-        // If there was a response, mark it with parent reference
-        if (responseMessage && responseMessage.role === "assistant") {
-          newMessages[messageIndex + 1] = {
-            ...responseMessage,
-            parentMessageId: messageId,
-          }
+        _activeStreamController?.abort()
+        _activeStreamController = new AbortController()
+
+        let completed = false
+        await apiSendMessageStream(
+          parseInt(activeConversation.id),
+          content,
+          {
+            onChunk: (delta) => {
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId ? { ...msg, content: msg.content + delta } : msg
+                  )
+                return {
+                  activeConversation:
+                    state.activeConversation?.id === activeConversation.id
+                      ? {
+                          ...state.activeConversation,
+                          messages: patchMessages(state.activeConversation.messages),
+                        }
+                      : state.activeConversation,
+                  conversations: state.conversations.map((c) =>
+                    c.id === activeConversation.id
+                      ? { ...c, messages: patchMessages(c.messages) }
+                      : c
+                  ),
+                }
+              })
+            },
+            onComplete: (event) => {
+              completed = true
+              const messageId = event.message_id.toString()
+              const sources = mapSources(event.sources, messageId)
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId
+                      ? {
+                          ...msg,
+                          id: messageId,
+                          sources,
+                          parentMessageId: event.parent_message_id
+                            ? `${event.parent_message_id}-user`
+                            : msg.parentMessageId,
+                          status: "completed" as const,
+                          timestamp: new Date(event.created_at),
+                        }
+                      : msg
+                  )
+                const updatedActiveConversation =
+                  state.activeConversation?.id === activeConversation.id
+                    ? {
+                        ...state.activeConversation,
+                        messages: patchMessages(state.activeConversation.messages),
+                        updatedAt: new Date(),
+                      }
+                    : state.activeConversation
+                const updatedConversations = state.conversations.map((c) =>
+                  c.id === activeConversation.id
+                    ? { ...c, messages: patchMessages(c.messages), updatedAt: new Date() }
+                    : c
+                )
+                const allSources = (updatedActiveConversation?.messages || []).flatMap(
+                  (msg) => msg.sources || []
+                )
+                return {
+                  activeConversation: updatedActiveConversation,
+                  conversations: updatedConversations,
+                  selectedSources: allSources,
+                  isWaitingForResponse: false,
+                  waitingConversationId: null,
+                }
+              })
+            },
+            onError: (error) => {
+              const isCancelled = error.code === "ABORT"
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId
+                      ? {
+                          ...msg,
+                          status: (isCancelled ? "cancelled" : "error") as "cancelled" | "error",
+                        }
+                      : msg
+                  )
+                return {
+                  activeConversation:
+                    state.activeConversation?.id === activeConversation.id
+                      ? {
+                          ...state.activeConversation,
+                          messages: patchMessages(state.activeConversation.messages),
+                        }
+                      : state.activeConversation,
+                  conversations: state.conversations.map((c) =>
+                    c.id === activeConversation.id
+                      ? { ...c, messages: patchMessages(c.messages) }
+                      : c
+                  ),
+                  isWaitingForResponse: false,
+                  waitingConversationId: null,
+                }
+              })
+              if (!isCancelled) {
+                toast.error(`Failed to send message: ${error.message}`)
+              }
+            },
+          },
+          _activeStreamController.signal
+        )
+
+        if (!completed) {
+          set({ isWaitingForResponse: false, waitingConversationId: null })
         }
 
-        set({
-          activeConversation: {
-            ...activeConversation,
-            messages: newMessages,
-            updatedAt: new Date(),
-          },
-        })
-
-        // Generate new response after delay
-        if (responseMessage && responseMessage.role === "assistant") {
-          setTimeout(() => {
-            const newAssistantMessage: Message = {
-              id: Date.now().toString(),
-              role: "assistant",
-              content: `I've re-analyzed based on your updated question. Here's the revised response:
-
-The updated analysis shows different insights based on your refined query. I found **3 relevant sources** that address your specific question.
-
-\`\`\`python
-import pandas as pd
-import numpy as np
-
-# Create customer data
-data = {
-    'customer_id': range(1, 11),
-    'segment': ['Enterprise', 'SMB', 'Enterprise', 'Premium', 'SMB',
-                'Enterprise', 'Premium', 'SMB', 'Enterprise', 'Premium'],
-    'revenue': [45000, 12000, 52000, 28000, 15000,
-                48000, 31000, 9500, 61000, 25000],
-    'months_active': [24, 8, 36, 18, 6, 30, 15, 4, 42, 12]
-}
-
-df = pd.DataFrame(data)
-
-# Analysis by segment
-summary = df.groupby('segment').agg({
-    'revenue': ['sum', 'mean', 'count'],
-    'months_active': 'mean'
-}).round(0)
-
-print("=== Customer Segment Analysis ===")
-print(summary)
-print(f"\\nTotal customers: {len(df)}")
-print(f"Total revenue: \${df['revenue'].sum():,}")
-print(f"\\nTop segment by revenue: {df.groupby('segment')['revenue'].sum().idxmax()}")
-print(f"Avg customer lifetime: {df['months_active'].mean():.1f} months")
-\`\`\`
-
-Would you like me to elaborate on any particular aspect?`,
-              sources: mockSources,
-              timestamp: new Date(),
-              parentMessageId: messageId,
-            }
-
+        // If this was first message, reload conversation to get updated title
+        if (completed && isFirstMessage) {
+          const updatedConvo = await getConversation(activeConversation.id)
+          if (updatedConvo.success) {
             set((state) => ({
               activeConversation: state.activeConversation
-                ? {
-                    ...state.activeConversation,
-                    messages: [...state.activeConversation.messages, newAssistantMessage],
-                    updatedAt: new Date(),
-                  }
+                ? { ...state.activeConversation, title: updatedConvo.data.title }
                 : null,
+              conversations: state.conversations.map((c) =>
+                c.id === activeConversation.id ? { ...c, title: updatedConvo.data.title } : c
+              ),
             }))
-          }, EDIT_RESPONSE_DELAY)
+          }
         }
       },
 
@@ -303,16 +525,383 @@ Would you like me to elaborate on any particular aspect?`,
       clearFolderSelection: () => {
         set({ selectedFolderIds: [] })
       },
+
+      // Edit message (or regenerate response for that specific message group)
+      editMessage: async (messageId, newContent) => {
+        const { activeConversation } = get()
+        if (!activeConversation?.messages) return
+
+        const originalMessages = activeConversation.messages
+        const userMessageIndex = originalMessages.findIndex(
+          (msg) => msg.id === messageId && msg.role === "user"
+        )
+
+        if (userMessageIndex === -1) return
+
+        const userMessage = originalMessages[userMessageIndex]
+        if (userMessage.role !== "user") return
+
+        const nextUserMessageIndex = originalMessages.findIndex(
+          (msg, idx) => idx > userMessageIndex && msg.role === "user"
+        )
+        const insertIndex =
+          nextUserMessageIndex === -1 ? originalMessages.length : nextUserMessageIndex
+        const previousContent = userMessage.content
+
+        const updatedUserMessage: Message = {
+          ...userMessage,
+          content: newContent,
+          isEdited: previousContent !== newContent || Boolean(userMessage.isEdited),
+          editHistory:
+            previousContent !== newContent
+              ? [
+                  ...(userMessage.editHistory || []),
+                  { content: previousContent, timestamp: userMessage.timestamp },
+                ]
+              : userMessage.editHistory,
+          timestamp: new Date(),
+        }
+
+        const tempAssistantId = `assistant-stream-${crypto.randomUUID()}`
+        const tempAssistant: Message = {
+          id: tempAssistantId,
+          role: "assistant",
+          content: "",
+          status: "streaming" as const,
+          parentMessageId: updatedUserMessage.id,
+          timestamp: new Date(),
+        }
+
+        set((state) => {
+          const baseMessages = [...originalMessages]
+          baseMessages[userMessageIndex] = updatedUserMessage
+          const conversationMessages = [
+            ...baseMessages.slice(0, insertIndex),
+            tempAssistant,
+            ...baseMessages.slice(insertIndex),
+          ]
+          const updatedConversation = state.activeConversation
+            ? { ...state.activeConversation, messages: conversationMessages, updatedAt: new Date() }
+            : null
+          return {
+            activeConversation: updatedConversation,
+            conversations: updatedConversation
+              ? state.conversations.map((c) =>
+                  c.id === updatedConversation.id ? updatedConversation : c
+                )
+              : state.conversations,
+            isWaitingForResponse: true,
+            waitingConversationId: activeConversation.id,
+          }
+        })
+
+        _activeStreamController?.abort()
+        _activeStreamController = new AbortController()
+
+        let completed = false
+        const fallbackParentMessageId = /^(\d+)-user$/.exec(userMessage.id)?.[1]
+        const linkedParentMessageId = fallbackParentMessageId
+          ? parseInt(fallbackParentMessageId, 10)
+          : undefined
+
+        await apiSendMessageStream(
+          parseInt(activeConversation.id),
+          newContent,
+          {
+            onChunk: (delta) => {
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId ? { ...msg, content: msg.content + delta } : msg
+                  )
+                return {
+                  activeConversation: state.activeConversation
+                    ? {
+                        ...state.activeConversation,
+                        messages: patchMessages(state.activeConversation.messages),
+                      }
+                    : null,
+                  conversations: state.conversations.map((c) =>
+                    c.id === activeConversation.id
+                      ? { ...c, messages: patchMessages(c.messages) }
+                      : c
+                  ),
+                }
+              })
+            },
+            onComplete: (event) => {
+              completed = true
+              const messageId = event.message_id.toString()
+              const sources = mapSources(event.sources, messageId)
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId
+                      ? {
+                          ...msg,
+                          id: messageId,
+                          status: "completed" as const,
+                          sources,
+                          parentMessageId: userMessage.id,
+                          timestamp: new Date(event.created_at),
+                        }
+                      : msg
+                  )
+                const updatedConversation = state.activeConversation
+                  ? {
+                      ...state.activeConversation,
+                      messages: patchMessages(state.activeConversation.messages),
+                      updatedAt: new Date(),
+                    }
+                  : null
+                const allSources = (updatedConversation?.messages || []).flatMap(
+                  (msg) => msg.sources || []
+                )
+                return {
+                  activeConversation: updatedConversation,
+                  conversations: updatedConversation
+                    ? state.conversations.map((c) =>
+                        c.id === updatedConversation.id ? updatedConversation : c
+                      )
+                    : state.conversations,
+                  selectedSources: allSources,
+                  isWaitingForResponse: false,
+                  waitingConversationId: null,
+                }
+              })
+            },
+            onError: (error) => {
+              const isCancelled = error.code === "ABORT"
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages
+                    .map((msg) => {
+                      if (msg.id === tempAssistantId) {
+                        if (isCancelled) {
+                          return { ...msg, status: "cancelled" as const }
+                        }
+                        return null
+                      }
+                      if (msg.id === updatedUserMessage.id && msg.role === "user" && !isCancelled) {
+                        return userMessage
+                      }
+                      return msg
+                    })
+                    .filter(Boolean) as Message[]
+
+                return {
+                  activeConversation: state.activeConversation
+                    ? {
+                        ...state.activeConversation,
+                        messages: patchMessages(state.activeConversation.messages),
+                      }
+                    : null,
+                  conversations: state.conversations.map((c) =>
+                    c.id === activeConversation.id
+                      ? { ...c, messages: patchMessages(c.messages) }
+                      : c
+                  ),
+                  isWaitingForResponse: false,
+                  waitingConversationId: null,
+                }
+              })
+              if (!isCancelled) {
+                toast.error(`Failed to regenerate message: ${error.message}`)
+              }
+            },
+          },
+          _activeStreamController.signal,
+          linkedParentMessageId
+        )
+
+        if (!completed) {
+          set({ isWaitingForResponse: false, waitingConversationId: null })
+        }
+      },
+
+      regenerateMessage: async (messageId, parentMessageId) => {
+        const { activeConversation } = get()
+        if (!activeConversation?.messages) return
+
+        const originalMessages = activeConversation.messages
+        const userMessageIndex = originalMessages.findIndex(
+          (msg) => msg.id === messageId && msg.role === "user"
+        )
+
+        if (userMessageIndex === -1) return
+
+        const userMessage = originalMessages[userMessageIndex]
+        const nextUserMessageIndex = originalMessages.findIndex(
+          (msg, idx) => idx > userMessageIndex && msg.role === "user"
+        )
+
+        const insertIndex =
+          nextUserMessageIndex === -1 ? originalMessages.length : nextUserMessageIndex
+        const tempAssistantId = `assistant-stream-${crypto.randomUUID()}`
+        const tempAssistant: Message = {
+          id: tempAssistantId,
+          role: "assistant",
+          content: "",
+          status: "streaming" as const,
+          parentMessageId: userMessage.id,
+          timestamp: new Date(),
+        }
+
+        set((state) => {
+          const updatedMessages = [
+            ...originalMessages.slice(0, insertIndex),
+            tempAssistant,
+            ...originalMessages.slice(insertIndex),
+          ]
+          const updatedConversation = state.activeConversation
+            ? { ...state.activeConversation, messages: updatedMessages, updatedAt: new Date() }
+            : null
+
+          return {
+            activeConversation: updatedConversation,
+            conversations: updatedConversation
+              ? state.conversations.map((c) =>
+                  c.id === updatedConversation.id ? updatedConversation : c
+                )
+              : state.conversations,
+            isWaitingForResponse: true,
+            waitingConversationId: activeConversation.id,
+          }
+        })
+
+        _activeStreamController?.abort()
+        _activeStreamController = new AbortController()
+
+        let completed = false
+        const fallbackParentMessageId = /^(\d+)-user$/.exec(userMessage.id)?.[1]
+        const linkedParentMessageId =
+          parentMessageId ??
+          (fallbackParentMessageId ? parseInt(fallbackParentMessageId, 10) : undefined)
+
+        await apiSendMessageStream(
+          parseInt(activeConversation.id),
+          userMessage.content,
+          {
+            onChunk: (delta) => {
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId ? { ...msg, content: msg.content + delta } : msg
+                  )
+                return {
+                  activeConversation: state.activeConversation
+                    ? {
+                        ...state.activeConversation,
+                        messages: patchMessages(state.activeConversation.messages),
+                      }
+                    : null,
+                  conversations: state.conversations.map((c) =>
+                    c.id === activeConversation.id
+                      ? { ...c, messages: patchMessages(c.messages) }
+                      : c
+                  ),
+                }
+              })
+            },
+            onComplete: (event) => {
+              completed = true
+              const messageId = event.message_id.toString()
+              const sources = mapSources(event.sources, messageId)
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId
+                      ? {
+                          ...msg,
+                          id: messageId,
+                          status: "completed" as const,
+                          sources,
+                          parentMessageId: event.parent_message_id
+                            ? `${event.parent_message_id}-user`
+                            : msg.parentMessageId,
+                          timestamp: new Date(event.created_at),
+                        }
+                      : msg
+                  )
+                const updatedConversation = state.activeConversation
+                  ? {
+                      ...state.activeConversation,
+                      messages: patchMessages(state.activeConversation.messages),
+                      updatedAt: new Date(),
+                    }
+                  : null
+                const allSources = (updatedConversation?.messages || []).flatMap(
+                  (msg) => msg.sources || []
+                )
+                return {
+                  activeConversation: updatedConversation,
+                  conversations: updatedConversation
+                    ? state.conversations.map((c) =>
+                        c.id === updatedConversation.id ? updatedConversation : c
+                      )
+                    : state.conversations,
+                  selectedSources: allSources,
+                  isWaitingForResponse: false,
+                  waitingConversationId: null,
+                }
+              })
+            },
+            onError: (error) => {
+              const isCancelled = error.code === "ABORT"
+              set((state) => {
+                const patchMessages = (messages: Message[] = []) =>
+                  messages.map((msg) =>
+                    msg.id === tempAssistantId
+                      ? {
+                          ...msg,
+                          status: (isCancelled ? "cancelled" : "error") as "cancelled" | "error",
+                        }
+                      : msg
+                  )
+                return {
+                  activeConversation: state.activeConversation
+                    ? {
+                        ...state.activeConversation,
+                        messages: patchMessages(state.activeConversation.messages),
+                      }
+                    : null,
+                  conversations: state.conversations.map((c) =>
+                    c.id === activeConversation.id
+                      ? { ...c, messages: patchMessages(c.messages) }
+                      : c
+                  ),
+                  isWaitingForResponse: false,
+                  waitingConversationId: null,
+                }
+              })
+              if (!isCancelled) {
+                toast.error(`Failed to regenerate message: ${error.message}`)
+              }
+            },
+          },
+          _activeStreamController.signal,
+          linkedParentMessageId
+        )
+
+        if (!completed) {
+          set({ isWaitingForResponse: false, waitingConversationId: null })
+        }
+      },
     }),
     { name: "chat-store" }
   )
 )
 
-// Селекторы для оптимизации ререндеров
+// Селекторы
 export const selectConversations = (state: ChatStore) => state.conversations
 export const selectActiveConversation = (state: ChatStore) => state.activeConversation
 export const selectShowSources = (state: ChatStore) => state.showSources
 export const selectSelectedSources = (state: ChatStore) => state.selectedSources
 export const selectSidebarOpen = (state: ChatStore) => state.sidebarOpen
 export const selectIsWaitingForResponse = (state: ChatStore) => state.isWaitingForResponse
+export const selectIsWaitingForActiveConversation = (state: ChatStore) =>
+  Boolean(state.activeConversation?.id) &&
+  state.waitingConversationId === state.activeConversation?.id
 export const selectSelectedFolderIds = (state: ChatStore) => state.selectedFolderIds
+export const selectIsLoading = (state: ChatStore) => state.isLoading
+export const selectError = (state: ChatStore) => state.error

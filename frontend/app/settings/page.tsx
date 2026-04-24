@@ -1,7 +1,8 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -21,13 +22,24 @@ import {
 import { ArrowLeft, User, Lock, Check, AlertCircle, Eye, EyeOff, Trash2 } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { cn } from "@/lib/utils"
+import { type User as UserType } from "@/lib/api/queries/user"
+import { getCurrentUser } from "@/lib/api/mutations/auth"
+import { updateUser, deleteUser as apiDeleteUser } from "@/lib/api/mutations/user"
+import { toast } from "sonner"
 
 export default function SettingsPage() {
-  // Profile state
-  const [name, setName] = useState("John Doe")
-  const [email] = useState("john.doe@example.com")
+  const router = useRouter()
+
+  // User data state
+  const [userId, setUserId] = useState<number | null>(null)
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
+  const [isLoadingUser, setIsLoadingUser] = useState(true)
+
+  // Profile edit state
   const [isEditingName, setIsEditingName] = useState(false)
   const [tempName, setTempName] = useState(name)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [profileSaved, setProfileSaved] = useState(false)
 
   // Password state
@@ -39,13 +51,51 @@ export default function SettingsPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [passwordError, setPasswordError] = useState("")
   const [passwordSuccess, setPasswordSuccess] = useState(false)
+  const [isSavingPassword, setIsSavingPassword] = useState(false)
 
-  const handleSaveName = () => {
-    if (tempName.trim()) {
-      setName(tempName.trim())
+  // Load user data on mount
+  useEffect(() => {
+    const loadUserData = async () => {
+      setIsLoadingUser(true)
+      const result = await getCurrentUser()
+
+      if (result.success) {
+        setUserId(result.data.user_id)
+        setName(result.data.username)
+        setEmail(result.data.email)
+        setTempName(result.data.username)
+      } else {
+        toast.error("Failed to load user data")
+        // Redirect to login if unauthorized
+        if (result.code === "UNAUTHORIZED") {
+          router.push("/login")
+        }
+      }
+
+      setIsLoadingUser(false)
+    }
+
+    loadUserData()
+  }, [router])
+
+  const handleSaveName = async () => {
+    if (tempName.trim() && tempName !== name) {
+      setIsSavingProfile(true)
+      const result = await updateUser({ username: tempName.trim() })
+
+      if (result.success) {
+        setName(tempName.trim())
+        setIsEditingName(false)
+        setProfileSaved(true)
+        toast.success("Profile updated")
+        setTimeout(() => setProfileSaved(false), 3000)
+      } else {
+        toast.error(result.error || "Failed to update profile")
+      }
+
+      setIsSavingProfile(false)
+    } else {
       setIsEditingName(false)
-      setProfileSaved(true)
-      setTimeout(() => setProfileSaved(false), 3000)
     }
   }
 
@@ -70,21 +120,45 @@ export default function SettingsPage() {
     return true
   }
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
     setPasswordError("")
     setPasswordSuccess(false)
 
     if (!validatePassword()) return
 
-    // Simulate password change
-    setTimeout(() => {
+    setIsSavingPassword(true)
+    const result = await updateUser({
+      old_password: currentPassword,
+      new_password: newPassword,
+    })
+
+    if (result.success) {
       setPasswordSuccess(true)
       setCurrentPassword("")
       setNewPassword("")
       setConfirmPassword("")
+      toast.success("Password changed successfully")
       setTimeout(() => setPasswordSuccess(false), 3000)
-    }, 500)
+    } else {
+      setPasswordError(result.error || "Failed to change password")
+      toast.error(result.error || "Failed to change password")
+    }
+
+    setIsSavingPassword(false)
+  }
+
+  const handleDeleteAccount = async () => {
+    const result = await apiDeleteUser()
+
+    if (result.success) {
+      toast.success("Account deleted successfully")
+      // Clear auth token and redirect to login
+      localStorage.removeItem("authToken")
+      router.push("/login")
+    } else {
+      toast.error(result.error || "Failed to delete account")
+    }
   }
 
   const getInitials = (name: string) => {
@@ -94,6 +168,14 @@ export default function SettingsPage() {
       .join("")
       .toUpperCase()
       .slice(0, 2)
+  }
+
+  if (isLoadingUser) {
+    return (
+      <div className="bg-background flex h-screen items-center justify-center">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    )
   }
 
   return (
@@ -155,11 +237,12 @@ export default function SettingsPage() {
                       placeholder="Enter your name"
                       className="bg-background/50 border-border/50 flex-1"
                       autoFocus
+                      disabled={isSavingProfile}
                     />
-                    <Button onClick={handleSaveName} size="sm">
-                      Save
+                    <Button onClick={handleSaveName} size="sm" disabled={isSavingProfile}>
+                      {isSavingProfile ? "Saving..." : "Save"}
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={handleCancelNameEdit}>
+                    <Button variant="ghost" size="sm" onClick={handleCancelNameEdit} disabled={isSavingProfile}>
                       Cancel
                     </Button>
                   </div>
@@ -219,6 +302,7 @@ export default function SettingsPage() {
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     placeholder="Enter current password"
                     className="bg-background/50 border-border/50 pr-10"
+                    disabled={isSavingPassword}
                   />
                   <Button
                     type="button"
@@ -249,6 +333,7 @@ export default function SettingsPage() {
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Enter new password"
                     className="bg-background/50 border-border/50 pr-10"
+                    disabled={isSavingPassword}
                   />
                   <Button
                     type="button"
@@ -279,6 +364,7 @@ export default function SettingsPage() {
                       "bg-background/50 border-border/50 pr-10",
                       confirmPassword && newPassword !== confirmPassword && "border-destructive"
                     )}
+                    disabled={isSavingPassword}
                   />
                   <Button
                     type="button"
@@ -312,8 +398,11 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              <Button type="submit" disabled={!currentPassword || !newPassword || !confirmPassword}>
-                Update password
+              <Button
+                type="submit"
+                disabled={!currentPassword || !newPassword || !confirmPassword || isSavingPassword}
+              >
+                {isSavingPassword ? "Updating..." : "Update password"}
               </Button>
             </form>
           </section>
@@ -347,7 +436,10 @@ export default function SettingsPage() {
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={handleDeleteAccount}
+                      >
                         Delete Account
                       </AlertDialogAction>
                     </AlertDialogFooter>

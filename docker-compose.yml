@@ -31,7 +31,7 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_DATABASE=${POSTGRES_DATABASE:-knowledge_base_rag}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-super-secret-key}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - JWT_ALGORITHM=HS256
     ports:
       - "8001:8001"
@@ -115,10 +115,10 @@ services:
       - CHROMADB_COLLECTION=docs_fast
       - MODEL_NAME=BAAI/bge-base-en-v1.5
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-super-secret-key}
-      - ADMIN_LOGIN=${ADMIN_LOGIN:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
-      - ADMIN_DELETE_TOKEN=${ADMIN_DELETE_TOKEN:-admin-token}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - ADMIN_LOGIN=${ADMIN_LOGIN}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_DELETE_TOKEN=${ADMIN_DELETE_TOKEN}
     ports:
       - "8000:8000"
     depends_on:

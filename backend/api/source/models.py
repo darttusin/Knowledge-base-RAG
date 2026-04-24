@@ -16,6 +16,8 @@ class SourceForList(BaseModel):
     source_type: SourceType
     size_bytes: int
     created_at: str
+    folder_id: int | None = None
+    folder_path: str | None = None
 
 
 class SourcesList(BaseModel):
@@ -34,6 +36,8 @@ class SourceContent(BaseModel):
     content: str
     size_bytes: int
     created_at: str
+    folder_id: int | None = None
+    folder_path: str | None = None
 
 
 class ErrorMessage(BaseModel):

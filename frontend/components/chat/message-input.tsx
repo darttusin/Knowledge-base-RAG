@@ -8,12 +8,12 @@ import { TooltipButton } from "@/components/tooltip-button"
 import { Paperclip, Send } from "lucide-react"
 import { MAX_MESSAGE_LENGTH } from "@/lib/constants"
 import { toast } from "sonner"
-import { useChatStore } from "@/lib/store/chat-store"
+import { selectIsWaitingForActiveConversation, useChatStore } from "@/lib/store/chat-store"
 
 export function MessageInput() {
   const [value, setValue] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const isWaitingForResponse = useChatStore((s) => s.isWaitingForResponse)
+  const isWaitingForResponse = useChatStore(selectIsWaitingForActiveConversation)
   const sendMessage = useChatStore((s) => s.sendMessage)
 
   const handleSend = () => {

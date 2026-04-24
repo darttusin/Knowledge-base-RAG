@@ -1,13 +1,17 @@
 // Base API client with error handling and request utilities
 
 import type { ApiResult } from "@/types/api"
+import { getAuthHeader } from "@/lib/auth/token"
+
+// Re-export ApiResult for convenience
+export type { ApiResult }
 
 // ============================================
 // Configuration
 // ============================================
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api"
-const DEFAULT_TIMEOUT = 30000
+const DEFAULT_TIMEOUT = 600000 // 10 minutes for RAG requests
 
 export interface RequestConfig extends RequestInit {
   timeout?: number
@@ -38,14 +42,35 @@ function buildUrl(
   endpoint: string,
   params?: Record<string, string | number | boolean | undefined>
 ): string {
-  const url = new URL(
-    endpoint,
-    API_BASE_URL.startsWith("http") ? API_BASE_URL : window.location.origin
-  )
-
-  if (!endpoint.startsWith("http")) {
-    url.pathname = `${API_BASE_URL}${endpoint}`.replace(/\/+/g, "/")
+  // Если endpoint уже полный URL, используем его
+  if (endpoint.startsWith("http")) {
+    const url = new URL(endpoint)
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          url.searchParams.append(key, String(value))
+        }
+      })
+    }
+    return url.toString()
   }
+
+  // Строим URL из base + endpoint
+  let baseUrl: string
+  if (API_BASE_URL.startsWith("http")) {
+    // API_BASE_URL уже полный URL
+    baseUrl = API_BASE_URL
+  } else {
+    // API_BASE_URL относительный путь
+    baseUrl = window.location.origin + API_BASE_URL
+  }
+
+  // Убираем trailing slash из base и leading slash из endpoint, затем соединяем
+  const cleanBase = baseUrl.replace(/\/$/, "")
+  const cleanEndpoint = endpoint.replace(/^\//, "")
+  const fullUrl = `${cleanBase}/${cleanEndpoint}`
+
+  const url = new URL(fullUrl)
 
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
@@ -75,7 +100,23 @@ async function handleResponse<T>(response: Response): Promise<T> {
       }
     }
 
+    // Handle 401 Unauthorized - clear auth and redirect to login
+    if (response.status === 401) {
+      if (typeof window !== "undefined") {
+        const { clearAuthData } = await import("@/lib/auth/token")
+        clearAuthData()
+
+        // Redirect to login page
+        window.location.href = "/login"
+      }
+    }
+
     throw new ApiRequestError(errorMessage, errorCode, response.status)
+  }
+
+  // Handle 204 No Content responses
+  if (response.status === 204 || response.headers.get("content-length") === "0") {
+    return {} as T
   }
 
   if (contentType?.includes("application/json")) {
@@ -97,14 +138,23 @@ async function request<T>(endpoint: string, config: RequestConfig = {}): Promise
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeout)
 
+  // Build headers with authentication
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(fetchConfig.headers as Record<string, string>),
+  }
+
+  // Add JWT token if available
+  const authHeader = getAuthHeader()
+  if (authHeader) {
+    headers["Authorization"] = authHeader
+  }
+
   try {
     const response = await fetch(url, {
       ...fetchConfig,
       signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...fetchConfig.headers,
-      },
+      headers,
     })
 
     return handleResponse<T>(response)
@@ -206,18 +256,34 @@ export interface StreamCallbacks<T> {
 export async function streamRequest<T>(
   endpoint: string,
   data: unknown,
-  callbacks: StreamCallbacks<T>
+  callbacks: StreamCallbacks<T>,
+  signal?: AbortSignal
 ): Promise<void> {
   const url = buildUrl(endpoint)
+
+  // Build headers with authentication
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  const authHeader = getAuthHeader()
+  if (authHeader) {
+    headers["Authorization"] = authHeader
+  }
 
   try {
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(data),
+      signal,
     })
 
     if (!response.ok) {
+      // Handle 401 Unauthorized - clear auth and redirect to login
+      if (response.status === 401 && typeof window !== "undefined") {
+        const { clearAuthData } = await import("@/lib/auth/token")
+        clearAuthData()
+        window.location.href = "/login"
+      }
+
       throw new ApiRequestError(
         `HTTP ${response.status}`,
         `HTTP_${response.status}`,
@@ -231,38 +297,81 @@ export async function streamRequest<T>(
     }
 
     const decoder = new TextDecoder()
+    let buffer = ""
+
+    const processDataLine = (rawLine: string) => {
+      const line = rawLine.trim()
+      if (!line.startsWith("data:")) {
+        return
+      }
+
+      const jsonStr = line.slice(5).trimStart()
+      if (!jsonStr) {
+        return
+      }
+
+      if (jsonStr === "[DONE]") {
+        callbacks.onComplete?.()
+        return "done"
+      }
+
+      try {
+        const event = JSON.parse(jsonStr)
+
+        // Handle error events from backend
+        if (event.type === "error") {
+          callbacks.onError?.(
+            new ApiRequestError(
+              event.message || "Stream error",
+              "STREAM_ERROR",
+              event.code || 500
+            )
+          )
+          return "done"
+        }
+
+        callbacks.onChunk(event as T)
+      } catch {
+        // Ignore JSON parse errors for malformed chunks
+      }
+      return
+    }
 
     while (true) {
       const { done, value } = await reader.read()
 
       if (done) {
+        if (buffer.trim()) {
+          for (const rawLine of buffer.split("\n")) {
+            const result = processDataLine(rawLine)
+            if (result === "done") {
+              return
+            }
+          }
+        }
         callbacks.onComplete?.()
         break
       }
 
-      const text = decoder.decode(value, { stream: true })
-      const lines = text.split("\n").filter((line) => line.trim())
+      buffer += decoder.decode(value, { stream: true })
 
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const jsonStr = line.slice(6)
-          if (jsonStr === "[DONE]") {
-            callbacks.onComplete?.()
-            return
-          }
+      // Parse incrementally by single lines as well.
+      // Some SSE servers flush one `data:` line at a time, not full `\n\n` blocks.
+      const lines = buffer.split("\n")
+      buffer = lines.pop() || ""
 
-          try {
-            const chunk = JSON.parse(jsonStr) as T
-            callbacks.onChunk(chunk)
-          } catch {
-            // Ignore JSON parse errors for malformed chunks
-          }
+      for (const rawLine of lines) {
+        const result = processDataLine(rawLine)
+        if (result === "done") {
+          return
         }
       }
     }
   } catch (error) {
     if (error instanceof ApiRequestError) {
       callbacks.onError?.(error)
+    } else if (error instanceof Error && error.name === "AbortError") {
+      callbacks.onError?.(new ApiRequestError("The operation was aborted.", "ABORT"))
     } else {
       callbacks.onError?.(
         new ApiRequestError(
@@ -296,7 +405,7 @@ export async function uploadFile<T>(
       }
     })
 
-    xhr.addEventListener("load", () => {
+    xhr.addEventListener("load", async () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           resolve(JSON.parse(xhr.responseText))
@@ -304,6 +413,13 @@ export async function uploadFile<T>(
           reject(new ApiRequestError("Invalid response", "PARSE_ERROR"))
         }
       } else {
+        // Handle 401 Unauthorized - clear auth and redirect to login
+        if (xhr.status === 401 && typeof window !== "undefined") {
+          const { clearAuthData } = await import("@/lib/auth/token")
+          clearAuthData()
+          window.location.href = "/login"
+        }
+
         reject(new ApiRequestError(`HTTP ${xhr.status}`, `HTTP_${xhr.status}`, xhr.status))
       }
     })
@@ -317,6 +433,13 @@ export async function uploadFile<T>(
     })
 
     xhr.open("POST", url)
+
+    // Add JWT token if available
+    const authHeader = getAuthHeader()
+    if (authHeader) {
+      xhr.setRequestHeader("Authorization", authHeader)
+    }
+
     xhr.send(formData)
   })
 }

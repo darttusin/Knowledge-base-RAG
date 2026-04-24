@@ -36,7 +36,10 @@ export function DocumentRow({
   const colorClass = FILE_EXTENSION_COLORS[document.type] || FILE_EXTENSION_COLORS.md
 
   return (
-    <div className="hover:bg-muted/30 group flex items-center gap-4 rounded-xl p-3 transition-colors">
+    <div
+      className="hover:bg-muted/30 group flex items-center gap-4 rounded-xl p-3 transition-colors cursor-pointer"
+      onClick={() => onPreview(document)}
+    >
       <div
         className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", colorClass)}
       >
@@ -55,7 +58,7 @@ export function DocumentRow({
         </div>
       </div>
 
-      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100" onClick={(e) => e.stopPropagation()}>
         <Button
           variant="ghost"
           size="icon"

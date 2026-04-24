@@ -1,63 +1,205 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useMemo, useState } from "react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { ParagraphRenderer } from "@/components/paragraph-renderer"
 import { SourceBadge } from "./source-badge"
 import { CodeBlock } from "@/components/code-block"
 import { useCopyFeedback } from "@/hooks/useCopyFeedback"
 import { Bot, Copy, Check, ThumbsUp, ThumbsDown, RefreshCw } from "lucide-react"
 import type { Message, Source } from "@/lib/types"
-import { CODE_BLOCK_REGEX } from "@/lib/syntax-highlighting"
 import { cn } from "@/lib/utils"
+import { sendMessageFeedback } from "@/lib/api"
+import { toast } from "sonner"
 
 interface AssistantMessageBubbleProps {
   message: Message
-  onSourceClick: (source: Source) => void
+  onSourceClick?: (source: Source) => void
+  onRegenerate?: () => void
 }
 
-export function AssistantMessageBubble({ message, onSourceClick }: AssistantMessageBubbleProps) {
-  const [feedback, setFeedback] = useState<"like" | "dislike" | null>(null)
+type MarkdownNode = {
+  type: string
+  value?: string
+  children?: MarkdownNode[]
+}
+
+const remarkSoftBreaks = () => {
+  const normalizeChildren = (node: MarkdownNode) => {
+    if (!node.children?.length) {
+      return
+    }
+
+    const nextChildren: MarkdownNode[] = []
+
+    for (const child of node.children) {
+      if (child.type === "text" && typeof child.value === "string" && child.value.includes("\n")) {
+        const parts = child.value.split("\n")
+
+        parts.forEach((part, index) => {
+          if (part) {
+            nextChildren.push({ ...child, value: part })
+          }
+          if (index < parts.length - 1) {
+            nextChildren.push({ type: "break" })
+          }
+        })
+      } else {
+        normalizeChildren(child)
+        nextChildren.push(child)
+      }
+    }
+
+    node.children = nextChildren
+  }
+
+  return (tree: MarkdownNode) => {
+    normalizeChildren(tree)
+  }
+}
+
+const safeUrlTransform = (url: string) => {
+  const normalized = url.trim().toLowerCase()
+  if (
+    normalized.startsWith("http://") ||
+    normalized.startsWith("https://") ||
+    normalized.startsWith("mailto:") ||
+    normalized.startsWith("tel:") ||
+    normalized.startsWith("#")
+  ) {
+    return url
+  }
+
+  return ""
+}
+
+export function AssistantMessageBubble({
+  message,
+  onSourceClick,
+  onRegenerate,
+}: AssistantMessageBubbleProps) {
+  const [feedback, setFeedback] = useState<"like" | "dislike" | null>(message.feedback || null)
   const { copied, copy } = useCopyFeedback()
 
   const handleCopy = () => copy(message.content)
 
-  const handleFeedback = (type: "like" | "dislike") => {
-    setFeedback(feedback === type ? null : type)
+  const handleFeedback = async (type: "like" | "dislike") => {
+    const newFeedback = feedback === type ? null : type
+    setFeedback(newFeedback)
+
+    // Send to backend if feedback is set (not null)
+    if (newFeedback) {
+      const result = await sendMessageFeedback(parseInt(message.id), newFeedback)
+      if (!result.success) {
+        toast.error(`Failed to send feedback: ${result.error}`)
+        setFeedback(feedback) // Revert on error
+      }
+    }
   }
 
-  // Parse content for code blocks
+  const handleRegenerate = () => {
+    if (onRegenerate) {
+      onRegenerate()
+    }
+  }
+
+  const safeStreamingContent = useMemo(() => {
+    const fenceCount = (message.content.match(/```/g) || []).length
+    const needsFenceClose = message.status === "streaming" && fenceCount % 2 === 1
+    return needsFenceClose ? `${message.content}\n\n\`\`\`` : message.content
+  }, [message.content, message.status])
+
+  // Render markdown with custom code block and source link components
   const renderContent = () => {
-    const content = message.content
-    const regex = new RegExp(CODE_BLOCK_REGEX.source, "g")
-    const parts: React.ReactNode[] = []
-    let lastIndex = 0
-    let match
+    const preprocessCitations = (content: string) => content.replace(/\r\n/g, "\n")
 
-    while ((match = regex.exec(content)) !== null) {
-      // Add text before code block
-      if (match.index > lastIndex) {
-        const textBefore = content.slice(lastIndex, match.index)
-        parts.push(<ParagraphRenderer key={`text-${lastIndex}`} content={textBefore} />)
+    // Replace [§N], [§1,2,4], [§1, §2] with clickable document names
+    const contentWithSourceLinks = preprocessCitations(safeStreamingContent).replace(
+      /\[\s*§\s*(\d+(?:\s*,\s*§?\s*\d+)*)\s*\]/g,
+      (_match, citationGroup) => {
+        const convertedCitations = citationGroup.split(/\s*,\s*/).map((citation: string) => {
+          const num = citation.replace(/§/g, "").trim()
+          const sourceIndex = parseInt(num) - 1
+
+          if (message.sources && message.sources[sourceIndex]) {
+            const source = message.sources[sourceIndex]
+            const docName = source.documentName || source.title
+            return `[${docName}](#source-${sourceIndex})`
+          }
+
+          return citation
+        })
+
+        return `[${convertedCitations.join(", ")}]`
       }
+    )
 
-      // Add code block
-      const language = match[1] || "javascript"
-      const code = match[2].trim()
-      parts.push(<CodeBlock key={`code-${match.index}`} code={code} language={language} />)
+    return (
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkSoftBreaks]}
+        skipHtml
+        urlTransform={safeUrlTransform}
+        components={{
+          code({ className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || "")
+            const language = match ? match[1] : "javascript"
+            const codeString = String(children).replace(/\n$/, "")
+            const isBlockCode = Boolean(match) || codeString.includes("\n")
 
-      lastIndex = match.index + match[0].length
-    }
+            return isBlockCode ? (
+              <CodeBlock code={codeString} language={language} />
+            ) : (
+              <code
+                className="bg-muted text-foreground rounded px-1.5 py-0.5 font-mono text-sm before:content-none after:content-none"
+                {...props}
+              >
+                {children}
+              </code>
+            )
+          },
+          a({ href, children, ...props }) {
+            // Handle source citations
+            if (href?.startsWith("#source-")) {
+              const sourceIndex = parseInt(href.replace("#source-", ""))
+              const source = message.sources?.[sourceIndex]
 
-    // Add remaining text after last code block
-    if (lastIndex < content.length) {
-      const remainingText = content.slice(lastIndex)
-      parts.push(<ParagraphRenderer key={`text-${lastIndex}`} content={remainingText} />)
-    }
+              return (
+                <button
+                  type="button"
+                  className="text-primary hover:text-primary/80 mx-0.5 inline-flex cursor-pointer items-baseline font-medium underline-offset-2 hover:underline"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    if (source && onSourceClick) {
+                      onSourceClick(source)
+                    }
+                  }}
+                >
+                  {children}
+                </button>
+              )
+            }
 
-    return parts.length > 0 ? parts : <ParagraphRenderer content={content} />
+            // Regular links
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:text-primary/80 underline-offset-2 hover:underline"
+                {...props}
+              >
+                {children}
+              </a>
+            )
+          },
+        }}
+      >
+        {contentWithSourceLinks}
+      </ReactMarkdown>
+    )
   }
 
   return (
@@ -66,8 +208,38 @@ export function AssistantMessageBubble({ message, onSourceClick }: AssistantMess
         <Bot className="text-primary-foreground h-3.5 w-3.5 sm:h-4 sm:w-4" />
       </div>
       <div className="min-w-0 flex-1 pt-0.5">
-        <div className="prose prose-sm text-foreground prose-p:leading-relaxed prose-p:my-2 prose-strong:text-foreground prose-strong:font-semibold max-w-none">
-          {renderContent()}
+        <div
+          className={cn(
+            "prose prose-sm dark:prose-invert max-w-none",
+            "prose-p:leading-relaxed prose-p:my-2 prose-p:text-foreground",
+            "prose-headings:font-semibold prose-headings:text-foreground",
+            "prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg",
+            "prose-strong:font-semibold prose-strong:text-foreground",
+            "prose-em:italic prose-em:text-foreground",
+            "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
+            "prose-code:bg-muted prose-code:text-foreground prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none",
+            "prose-pre:bg-transparent prose-pre:p-0 prose-pre:m-0",
+            "prose-blockquote:border-l-primary prose-blockquote:border-l-4 prose-blockquote:italic prose-blockquote:text-foreground/80",
+            "prose-ul:list-disc prose-ol:list-decimal prose-ul:text-foreground prose-ol:text-foreground prose-ul:pl-6 prose-ol:pl-6",
+            "prose-li:text-foreground prose-li:my-1 prose-li:marker:text-muted-foreground",
+            "prose-table:border prose-table:border-border",
+            "prose-th:bg-muted prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2",
+            "prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2",
+            "prose-hr:border-border"
+          )}
+        >
+          {message.status === "streaming" && !message.content.trim() ? (
+            <div
+              className="text-muted-foreground flex items-center gap-1 py-1"
+              aria-label="Assistant is typing"
+            >
+              <span className="bg-muted-foreground/70 h-1.5 w-1.5 animate-pulse rounded-full [animation-delay:0ms]" />
+              <span className="bg-muted-foreground/70 h-1.5 w-1.5 animate-pulse rounded-full [animation-delay:180ms]" />
+              <span className="bg-muted-foreground/70 h-1.5 w-1.5 animate-pulse rounded-full [animation-delay:360ms]" />
+            </div>
+          ) : (
+            renderContent()
+          )}
         </div>
 
         {/* Sources */}
@@ -79,7 +251,7 @@ export function AssistantMessageBubble({ message, onSourceClick }: AssistantMess
                 <SourceBadge
                   key={source.id}
                   source={source}
-                  onClick={() => onSourceClick(source)}
+                  onClick={() => onSourceClick?.(source)}
                 />
               ))}
             </div>
@@ -176,6 +348,7 @@ export function AssistantMessageBubble({ message, onSourceClick }: AssistantMess
                   variant="ghost"
                   size="icon"
                   className="text-muted-foreground hover:text-foreground hover:bg-muted/50 h-7 w-7 transition-all duration-200 active:rotate-180 sm:h-8 sm:w-8"
+                  onClick={handleRegenerate}
                 >
                   <RefreshCw className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 </Button>

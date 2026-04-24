@@ -132,16 +132,6 @@ export function useDocuments(currentFolderId: string | null = null) {
         setTotalCount(result.data.total)
         setTotalSizeBytes(result.data.totalSize || 0)
         setHasMore(docs.length === ITEMS_PER_PAGE)
-        console.log(
-          "Loaded documents - Page:",
-          page,
-          "Total:",
-          result.data.total,
-          "TotalSize:",
-          result.data.totalSize,
-          "Loaded:",
-          docs.length
-        )
       } else {
         toast.error(`Failed to load documents: ${result.error}`)
       }

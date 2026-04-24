@@ -2,6 +2,8 @@ import re
 
 import httpx
 
+from settings import settings
+
 
 async def extract_python_code(text: str) -> list[str]:
     pattern = r"```(?:python|py)\n(.*?)```"
@@ -10,7 +12,19 @@ async def extract_python_code(text: str) -> list[str]:
     return [match.strip() for match in matches if match.strip()]
 
 
-async def execute_code_block(code: str, executor_url: str, timeout: int = 10) -> dict:
+async def execute_code_block(code: str, executor_url: str, timeout: int | None = None) -> dict:
+    if timeout is None:
+        timeout = settings.CODE_EXECUTOR_TIMEOUT
+
+    # Validate code length
+    if len(code) > settings.CODE_EXECUTOR_MAX_CODE_LENGTH:
+        return {
+            "success": False,
+            "stdout": "",
+            "stderr": "",
+            "result": None,
+            "error": f"Code exceeds maximum length of {settings.CODE_EXECUTOR_MAX_CODE_LENGTH} characters",
+        }
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(

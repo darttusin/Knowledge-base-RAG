@@ -17,7 +17,7 @@ import { toast } from "sonner"
 
 interface AssistantMessageBubbleProps {
   message: Message
-  onSourceClick: (source: Source) => void
+  onSourceClick?: (source: Source) => void
   onRegenerate?: () => void
 }
 
@@ -168,14 +168,14 @@ export function AssistantMessageBubble({
 
               return (
                 <button
+                  type="button"
                   className="text-primary hover:text-primary/80 mx-0.5 inline-flex cursor-pointer items-baseline font-medium underline-offset-2 hover:underline"
                   onClick={(e) => {
                     e.preventDefault()
-                    if (source) {
+                    if (source && onSourceClick) {
                       onSourceClick(source)
                     }
                   }}
-                  {...props}
                 >
                   {children}
                 </button>
@@ -251,7 +251,7 @@ export function AssistantMessageBubble({
                 <SourceBadge
                   key={source.id}
                   source={source}
-                  onClick={() => onSourceClick(source)}
+                  onClick={() => onSourceClick?.(source)}
                 />
               ))}
             </div>

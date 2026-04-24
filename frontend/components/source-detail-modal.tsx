@@ -1,11 +1,9 @@
 "use client"
 
-import { useRouter } from "next/navigation"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { useCopyFeedback } from "@/hooks/useCopyFeedback"
@@ -14,7 +12,6 @@ import {
   Database,
   Globe,
   Copy,
-  ExternalLink,
   Hash,
   CheckCircle2,
   Clock,
@@ -39,7 +36,6 @@ const SOURCE_TYPE_ICONS = {
 }
 
 export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailModalProps) {
-  const router = useRouter()
   const { copied, copy } = useCopyFeedback()
 
   if (!source) return null
@@ -61,10 +57,6 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
 
   const handleCopy = () => copy(extendedData.fullContent)
 
-  const handleOpenOriginal = () => {
-    router.push(`/documents?id=${source.documentId}`)
-  }
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] max-w-2xl gap-0 overflow-hidden p-0">
@@ -79,22 +71,15 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
               <Icon className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <DialogTitle className="text-foreground text-lg font-semibold">
-                    {source.title}
-                  </DialogTitle>
-                  <p className="text-muted-foreground mt-0.5 text-sm">{typeLabel} Source</p>
-                </div>
-                <Badge className="bg-primary/10 text-primary border-primary/20 hover:bg-primary/15 shrink-0">
-                  {Math.round(source.relevance * 100)}% Relevance
-                </Badge>
-              </div>
+              <DialogTitle className="text-foreground text-lg font-semibold">
+                {source.title}
+              </DialogTitle>
+              <p className="text-muted-foreground mt-0.5 text-sm">{typeLabel} Source</p>
             </div>
           </div>
         </DialogHeader>
 
-        <ScrollArea className="max-h-[calc(85vh-180px)] flex-1">
+        <ScrollArea className="max-h-[calc(85vh-120px)] flex-1">
           <div className="space-y-6 p-6">
             {/* Folder path if exists */}
             {source.folderPath && (
@@ -136,31 +121,31 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
                   )}
                 </Button>
               </div>
-              <div className="border-border bg-muted/30 rounded-xl border p-4 overflow-hidden">
-                <div className="text-foreground text-sm leading-relaxed break-words max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+              <div className="border-border bg-muted/30 rounded-xl border p-4 overflow-hidden max-w-full">
+                <div className="text-foreground text-sm leading-relaxed max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                   {source.title.endsWith(".md") ? (
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{
-                        h1: ({ children }) => <h1 className="text-base font-bold mb-2 mt-4 first:mt-0 break-words">{children}</h1>,
-                        h2: ({ children }) => <h2 className="text-sm font-semibold mb-2 mt-3 first:mt-0 break-words">{children}</h2>,
-                        h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-2 first:mt-0 break-words">{children}</h3>,
-                        p: ({ children }) => <p className="mb-2 break-words">{children}</p>,
-                        ul: ({ children }) => <ul className="list-disc ml-4 mb-2 break-words">{children}</ul>,
-                        ol: ({ children }) => <ol className="list-decimal ml-4 mb-2 break-words">{children}</ol>,
-                        li: ({ children }) => <li className="mb-1 break-words">{children}</li>,
+                        h1: ({ children }) => <h1 className="text-base font-bold mb-2 mt-4 first:mt-0 max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{children}</h1>,
+                        h2: ({ children }) => <h2 className="text-sm font-semibold mb-2 mt-3 first:mt-0 max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{children}</h2>,
+                        h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-2 first:mt-0 max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{children}</h3>,
+                        p: ({ children }) => <p className="mb-2 max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{children}</p>,
+                        ul: ({ children }) => <ul className="list-disc ml-4 mb-2 max-w-full">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal ml-4 mb-2 max-w-full">{children}</ol>,
+                        li: ({ children }) => <li className="mb-1 max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{children}</li>,
                         code: ({ className, children }) => {
                           const isBlock = className?.includes('language-')
                           return isBlock ? (
-                            <pre className="bg-muted/50 p-2 rounded overflow-x-auto mb-2 text-xs break-words whitespace-pre-wrap">
-                              <code className="break-words">{children}</code>
+                            <pre className="bg-muted/50 p-2 rounded mb-2 text-xs max-w-full whitespace-pre-wrap" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                              <code className="max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{children}</code>
                             </pre>
                           ) : (
-                            <code className="bg-muted/50 px-1 py-0.5 rounded text-xs break-all">{children}</code>
+                            <code className="bg-muted/50 px-1 py-0.5 rounded text-xs break-all max-w-full">{children}</code>
                           )
                         },
                         a: ({ href, children }) => (
-                          <a href={href} className="text-primary underline break-all" target="_blank" rel="noopener noreferrer">
+                          <a href={href} className="text-primary underline break-all max-w-full" target="_blank" rel="noopener noreferrer">
                             {children}
                           </a>
                         ),
@@ -169,7 +154,7 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
                       {extendedData.fullContent}
                     </ReactMarkdown>
                   ) : (
-                    <div className="whitespace-pre-wrap break-words">{extendedData.fullContent}</div>
+                    <div className="whitespace-pre-wrap max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{extendedData.fullContent}</div>
                   )}
                 </div>
               </div>
@@ -232,22 +217,6 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
             )}
           </div>
         </ScrollArea>
-
-        {/* Footer */}
-        <div className="border-border bg-card/50 flex items-center justify-between border-t p-4">
-          <p className="text-muted-foreground text-xs">
-            Source retrieved from your private database
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-2 bg-transparent"
-            onClick={handleOpenOriginal}
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Open Original
-          </Button>
-        </div>
       </DialogContent>
     </Dialog>
   )

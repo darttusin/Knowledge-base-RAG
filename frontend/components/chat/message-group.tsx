@@ -10,7 +10,7 @@ import type { Message, Source } from "@/lib/types"
 interface MessageGroupProps {
   userMessage: Message
   responses: Message[]
-  onSourceClick: (source: Source) => void
+  onSourceClick?: (source: Source) => void
   onEditMessage: (messageId: string, newContent: string) => void
   onRegenerateMessage: (messageId: string, parentMessageId?: number) => void
 }

@@ -3,6 +3,9 @@
 import type { ApiResult } from "@/types/api"
 import { getAuthHeader } from "@/lib/auth/token"
 
+// Re-export ApiResult for convenience
+export type { ApiResult }
+
 // ============================================
 // Configuration
 // ============================================

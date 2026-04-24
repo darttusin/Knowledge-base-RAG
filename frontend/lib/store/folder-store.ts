@@ -70,7 +70,6 @@ export const useFolderStore = create<FolderStore>()(
 
         if (result.success) {
           const folders = result.data.map(adaptBackendFolder)
-          console.log('Loaded folders:', folders.slice(0, 5)) // Debug: show first 5 folders
           set({ folders, isLoading: false })
         } else {
           console.error("Failed to load folders:", result.error)

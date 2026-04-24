@@ -22,7 +22,8 @@ import {
 import { ArrowLeft, User, Lock, Check, AlertCircle, Eye, EyeOff, Trash2 } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { cn } from "@/lib/utils"
-import { getCurrentUser, type User as UserType } from "@/lib/api/queries/user"
+import { type User as UserType } from "@/lib/api/queries/user"
+import { getCurrentUser } from "@/lib/api/mutations/auth"
 import { updateUser, deleteUser as apiDeleteUser } from "@/lib/api/mutations/user"
 import { toast } from "sonner"
 

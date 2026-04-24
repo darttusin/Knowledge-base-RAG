@@ -74,7 +74,6 @@ function FolderNode({ folder, level = 0 }: FolderNodeProps) {
   }
 
   const handleSelect = () => {
-    console.log('Selected folder:', { id: folder.id, name: folder.name, path: folder.path })
     setCurrentFolder(folder.id)
   }
 
@@ -276,7 +275,6 @@ export function FolderTree() {
                   currentFolderId === null && "bg-primary/10 hover:bg-primary/15"
                 )}
                 onClick={() => {
-                  console.log('Selected: All Documents (currentFolderId = null)')
                   setCurrentFolder(null)
                 }}
               >

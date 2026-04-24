@@ -22,6 +22,16 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Knowledge Base RAG Backend...")
 
+    # Validate JWT secret key
+    known_bad_secrets = [
+        "super-secret-key",
+        "your-super-secret-key-change-this-in-production",
+    ]
+    if settings.JWT_SECRET_KEY in known_bad_secrets:
+        logger.error("❌ FATAL: Using default/insecure JWT_SECRET_KEY")
+        logger.error("   Please set a secure JWT_SECRET_KEY in your .env file")
+        raise ValueError("Insecure JWT_SECRET_KEY detected. Application will not start.")
+
     # Initialize database
     await init_db()
     logger.info("✓ Database initialized")
@@ -78,13 +88,11 @@ app = FastAPI(
 # Configure CORS - must use explicit origins with credentials (cannot use "*")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "*",
-    ],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["*"],
+    allow_headers=["Authorization", "Content-Type"],
+    expose_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(user_router)

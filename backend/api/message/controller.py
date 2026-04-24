@@ -2,13 +2,21 @@ import asyncio
 import contextlib
 from fastapi import HTTPException, status
 from fastapi.responses import StreamingResponse
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
+from constants import (
+    SSE_CHUNK_SIZE,
+    RELEVANCE_SIMILARITY_WEIGHT,
+    RELEVANCE_POSITION_WEIGHT,
+    RELEVANCE_CHUNK_COUNT_WEIGHT,
+)
 from db import Dialogue, Message, Source, Folder
 from settings import settings
 from services.rag_service import get_rag_service
+from utils.path_utils import strip_source_prefix
 
 from .code_parser import parse_and_execute_code
 from api.message_citation_utils import remap_response_citations
@@ -21,7 +29,7 @@ def _sse_event(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _chunk_text(text: str, chunk_size: int = 32) -> list[str]:
+def _chunk_text(text: str, chunk_size: int = SSE_CHUNK_SIZE) -> list[str]:
     if not text:
         return []
     return [text[i: i + chunk_size] for i in range(0, len(text), chunk_size)]
@@ -139,9 +147,9 @@ def calculate_smart_relevance(
 
         # Combined score
         relevance_score = (
-            weighted_avg_score * 0.4 +
-            position_score * 0.3 +
-            frequency_score * 0.3
+            weighted_avg_score * RELEVANCE_SIMILARITY_WEIGHT +
+            position_score * RELEVANCE_POSITION_WEIGHT +
+            frequency_score * RELEVANCE_CHUNK_COUNT_WEIGHT
         )
 
         # Use chunk with best individual score for display
@@ -230,11 +238,7 @@ async def generate_message_response(
 
         for position, chunk in enumerate(rag_response.chunks, start=1):
             # Clean source path by removing common prefixes
-            source_path = chunk.source
-            for prefix in ["drive/MyDrive/dataset/", "dataset/"]:
-                if source_path.startswith(prefix):
-                    source_path = source_path[len(prefix):]
-                    break
+            source_path = strip_source_prefix(chunk.source)
 
             # Find source in database
             source_obj = await find_source_by_path(source_path, user_id, db)
@@ -313,13 +317,13 @@ async def generate_message_response(
     )
 
     if should_generate_title:
-        from api.dialogue.controller import generate_dialogue_title
+        from services.title_service import generate_dialogue_title
         try:
             new_title = generate_dialogue_title(data.message, rag_service)
             dialogue.name = new_title
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to generate dialogue title: {e}")
             # Keep default name on error
-            pass
 
     await db.commit()
     await db.refresh(new_message)
@@ -434,18 +438,19 @@ async def send_message_stream(
 
             if stream_error:
                 await db.rollback()
-                yield _sse_event({"type": "error", "message": f"RAG stream error: {str(stream_error)}", "code": 500})
+                logger.error(f"RAG stream error: {stream_error}", exc_info=stream_error)
+                yield _sse_event({
+                    "type": "error",
+                    "message": f"RAG stream error: {str(stream_error)}",
+                    "code": "rag_stream_error"
+                })
                 yield "data: [DONE]\n\n"
                 return
 
             chunks_by_source: dict[int, list[tuple[int, float, str]]] = {}
             source_metadata: dict[int, tuple[str, str | None]] = {}
             for position, chunk in enumerate(rag_response.chunks, start=1):
-                source_path = chunk.source
-                for prefix in ["drive/MyDrive/dataset/", "dataset/"]:
-                    if source_path.startswith(prefix):
-                        source_path = source_path[len(prefix):]
-                        break
+                source_path = strip_source_prefix(chunk.source)
                 source_obj = await find_source_by_path(source_path, user_id, db)
                 if source_obj:
                     if source_obj.id not in chunks_by_source:
@@ -500,11 +505,11 @@ async def send_message_stream(
             normalized_dialogue_name = (dialogue.name or "").strip().lower()
             should_generate_title = is_first_message and normalized_dialogue_name in {"", "new conversation"}
             if should_generate_title:
-                from api.dialogue.controller import generate_dialogue_title
+                from services.title_service import generate_dialogue_title
                 try:
                     dialogue.name = generate_dialogue_title(data.message, rag_service)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Failed to generate dialogue title: {e}")
 
             await db.commit()
             yield "data: [DONE]\n\n"
@@ -514,7 +519,12 @@ async def send_message_stream(
             raise
         except Exception as e:  # pragma: no cover - defensive handling after stream start
             await db.rollback()
-            yield _sse_event({"type": "error", "message": f"Stream processing error: {str(e)}", "code": 500})
+            logger.error(f"Stream processing error: {e}", exc_info=True)
+            yield _sse_event({
+                "type": "error",
+                "message": f"Stream processing error: {str(e)}",
+                "code": "stream_processing_error"
+            })
             yield "data: [DONE]\n\n"
         finally:
             if stream_task and not stream_task.done():

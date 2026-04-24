@@ -10,7 +10,7 @@ import { selectIsWaitingForActiveConversation, useChatStore } from "@/lib/store/
 import type { Source } from "@/lib/types"
 
 interface MessageListProps {
-  onSourceClick: (source: Source) => void
+  onSourceClick?: (source: Source) => void
   onSuggestionClick?: (suggestion: string) => void
 }
 

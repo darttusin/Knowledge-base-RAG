@@ -1,5 +1,7 @@
 // API request/response types and contracts
 
+import type { Message } from "@/lib/types"
+
 // ============================================
 // Base API types
 // ============================================
@@ -80,7 +82,8 @@ export interface ConversationListItem {
   messageCount: number
   createdAt: string
   updatedAt: string
-  messages?: MessageResponse[] // Populated when fetching single conversation
+  messages?: Message[] // Populated when fetching single conversation
+  preGeneratedQueries?: Array<{ query: string; icon: "database" | "doc" | "browser" }>
 }
 
 export interface ConversationResponse {

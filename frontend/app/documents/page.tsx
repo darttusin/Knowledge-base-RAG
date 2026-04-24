@@ -90,25 +90,24 @@ export default function DocumentsPage() {
   // Handle document ID from URL (only once)
   useEffect(() => {
     if (documentIdFromUrl && !hasProcessedDocId.current) {
-      hasProcessedDocId.current = true
       const doc = findDocumentById(documentIdFromUrl)
       if (doc) {
+        hasProcessedDocId.current = true
         // Set current folder to document's folder
         if (doc.folderId && doc.folderId !== currentFolderId) {
           setCurrentFolder(doc.folderId)
         }
-        // Open preview after a short delay to ensure folder is set
-        setTimeout(() => {
-          openPreview(doc)
-          // Clear the URL parameter after opening
-          router.replace("/documents", { scroll: false })
-        }, 100)
-      } else {
-        // Document not found, clear the parameter
+        // Open preview
+        openPreview(doc)
+        // Clear the URL parameter after opening
+        router.replace("/documents", { scroll: false })
+      } else if (documents.length > 0) {
+        // Document not found after documents loaded, clear the parameter
+        hasProcessedDocId.current = true
         router.replace("/documents", { scroll: false })
       }
     }
-  }, [documentIdFromUrl, findDocumentById, openPreview, setCurrentFolder, currentFolderId, router])
+  }, [documentIdFromUrl, documents, findDocumentById, openPreview, setCurrentFolder, currentFolderId, router])
 
   // Folder dialogs state
   const [renameFolderDialogOpen, setRenameFolderDialogOpen] = useState(false)

@@ -1,3 +1,5 @@
+import json
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,8 +65,6 @@ async def get_dialogue(
         )
 
     pre_generated = generate_pre_generated_queries()
-
-    import json
 
     messages = []
     for msg in dialogue.messages:

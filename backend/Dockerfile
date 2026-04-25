@@ -6,15 +6,21 @@ WORKDIR /app
 # Установка uv
 RUN pip install --no-cache-dir uv
 
-# Копирование зависимостей
+# Копирование корневого pyproject.toml и workspace зависимостей
 COPY pyproject.toml ./
+COPY rag ./rag
+COPY outlier-detection ./outlier-detection
 
-# Установка зависимостей
+# Копирование backend зависимостей
+COPY backend/pyproject.toml ./backend/
+
+# Установка зависимостей из backend
+WORKDIR /app/backend
 RUN uv pip install --system -e .
 RUN uv pip install --system --group dev
 
-# Копирование кода
-COPY . .
+# Копирование backend кода
+COPY backend ./
 
 EXPOSE 8001
 

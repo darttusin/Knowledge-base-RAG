@@ -22,8 +22,8 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./backend/Dockerfile
     container_name: kb_backend
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
@@ -41,7 +41,9 @@ services:
       code-executor:
         condition: service_healthy
     volumes:
-      - ./backend:/app
+      - ./backend:/app/backend
+      - ./rag:/app/rag
+      - ./outlier-detection:/app/outlier-detection
     networks:
       - kb_network
       - zz_backend_executor
@@ -100,37 +102,6 @@ services:
       retries: 3
       start_period: 5s
 
-  api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
-    container_name: kb_api
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DATABASE=${POSTGRES_DATABASE:-knowledge_base_rag}
-      - CHROMADB_PATH=/app/data/chromadb
-      - CHROMADB_COLLECTION=docs_fast
-      - MODEL_NAME=BAAI/bge-base-en-v1.5
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - ADMIN_LOGIN=${ADMIN_LOGIN}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - ADMIN_DELETE_TOKEN=${ADMIN_DELETE_TOKEN}
-    ports:
-      - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./api:/app
-      - ./data:/app/data
-    networks:
-      - kb_network
-    command: uvicorn app:app --host 0.0.0.0 --port 8000 --reload
-
   frontend:
     build:
       context: ./frontend
@@ -143,35 +114,9 @@ services:
       - "3000:3000"
     depends_on:
       - backend
-      - api
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
     networks:
       - kb_network
     command: pnpm dev
-
-  tgbot:
-    build:
-      context: ./tgbot
-      dockerfile: Dockerfile
-    container_name: kb_tgbot
-    environment:
-      - API_URL=http://api:8000/forward
-      - API_HISTORY_URL=http://api:8000/history
-      - API_STATS_URL=http://api:8000/stats
-      - TGBOT_TOKEN=${TGBOT_TOKEN}
-      - ALLOWED_USERS=${ALLOWED_USERS:-[]}
-    depends_on:
-      - api
-    volumes:
-      - ./tgbot:/app
-    networks:
-      - kb_network
-    command: python -m tgbot
-    profiles:
-      - with-bot
 
 volumes:
   postgres_data:

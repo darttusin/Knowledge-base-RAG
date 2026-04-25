@@ -1,10 +1,10 @@
+from dataclasses import dataclass
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from httpx import AsyncClient
 
 from api.message_citation_utils import remap_response_citations
-from dataclasses import dataclass
 
 
 @dataclass

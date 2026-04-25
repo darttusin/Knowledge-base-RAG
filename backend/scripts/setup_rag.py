@@ -6,7 +6,6 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import asyncio
 from rag import Settings as RagSettings
 from rag import create_embed_model
 from rag.documents import load_documents, split_documents
@@ -15,58 +14,32 @@ from rag.vectorstore import create_collection, index_chunks
 
 def index_documents():
     """Index documents into ChromaDB."""
-    print("=" * 60)
-    print("Indexing Documents into ChromaDB")
-    print("=" * 60)
 
     # Load settings
     settings = RagSettings()
 
-    print(f"\nSettings:")
-    print(f"  Dataset path: {settings.dataset_path}")
-    print(f"  Chroma path: {settings.chroma_path}")
-    print(f"  Collection: {settings.chroma_collection}")
-    print(f"  Chunk size: {settings.chunk_size}")
-    print(f"  Chunk overlap: {settings.chunk_overlap}")
-    print(f"  Embedding model: {settings.embedding_model}")
 
     # Load documents
-    print(f"\n[1/5] Loading documents from {settings.dataset_path}...")
     docs = load_documents(settings.dataset_path)
-    print(f"✓ Loaded {len(docs)} documents")
 
     # Split documents
-    print(f"\n[2/5] Splitting documents (chunk_size={settings.chunk_size}, overlap={settings.chunk_overlap})...")
     chunks = split_documents(docs, settings.chunk_size, settings.chunk_overlap)
-    print(f"✓ Created {len(chunks)} chunks")
 
     # Create embedding model
-    print(f"\n[3/5] Loading embedding model: {settings.embedding_model}...")
     embed_model = create_embed_model(settings)
-    print(f"✓ Model loaded")
 
     # Create collection
-    print(f"\n[4/5] Creating ChromaDB collection: {settings.chroma_collection}...")
     collection = create_collection(settings.chroma_path, settings.chroma_collection)
-    print(f"✓ Collection created/loaded")
 
     # Index chunks
-    print(f"\n[5/5] Indexing chunks into ChromaDB...")
     index_chunks(collection, chunks, embed_model, batch_size=200)
-    print(f"✓ Indexing complete")
 
-    print(f"\n{'=' * 60}")
-    print(f"✓ Successfully indexed {len(chunks)} chunks into ChromaDB")
-    print(f"{'=' * 60}")
 
 
 def train_classifier():
     """Train topic classifier for outlier detection."""
     from outlier_detection import TopicClassifier
 
-    print("\n" + "=" * 60)
-    print("Training Topic Classifier")
-    print("=" * 60)
 
     # Sample PyTorch-related questions for training
     pytorch_texts = [
@@ -143,8 +116,6 @@ def train_classifier():
         "What is register_hook?",
     ]
 
-    print(f"\n[1/3] Training classifier on {len(pytorch_texts)} PyTorch-related texts...")
-    print(f"         (This may take a minute...)")
 
     classifier = TopicClassifier(
         max_features=5000,
@@ -152,10 +123,8 @@ def train_classifier():
         kernel="rbf",
     )
     classifier.fit(pytorch_texts)
-    print("✓ Classifier trained")
 
     # Test on some examples
-    print(f"\n[2/3] Testing classifier...")
     test_cases = [
         ("How to create a tensor?", True),
         ("What is the weather today?", False),
@@ -169,29 +138,20 @@ def train_classifier():
     for text, expected_on_topic in test_cases:
         result = classifier.predict(text)
         is_on_topic = result.labels[0] == 1
-        confidence = abs(float(result.scores[0]))
-        status = "✓" if is_on_topic == expected_on_topic else "✗"
-        topic_label = "ON-TOPIC" if is_on_topic else "OFF-TOPIC"
+        abs(float(result.scores[0]))
 
-        print(f"  {status} [{topic_label:11s}] (conf: {confidence:.3f}) {text}")
 
         if is_on_topic == expected_on_topic:
             correct += 1
 
-    accuracy = correct / len(test_cases) * 100
-    print(f"\n  Accuracy: {correct}/{len(test_cases)} ({accuracy:.1f}%)")
+    correct / len(test_cases) * 100
 
     # Save classifier
     output_path = Path(__file__).parent.parent / "models" / "pytorch_classifier.joblib"
     output_path.parent.mkdir(exist_ok=True)
 
-    print(f"\n[3/3] Saving classifier to {output_path}...")
     classifier.save(output_path)
-    print("✓ Classifier saved")
 
-    print(f"\n{'=' * 60}")
-    print(f"✓ Successfully trained and saved topic classifier")
-    print(f"{'=' * 60}")
 
 
 def main():
@@ -212,36 +172,23 @@ def main():
 
     args = parser.parse_args()
 
-    print("\n" + "=" * 60)
-    print("RAG System Setup")
-    print("=" * 60)
 
     if not args.skip_index:
         try:
             index_documents()
-        except Exception as e:
-            print(f"\n✗ Error indexing documents: {e}")
+        except Exception:
             return 1
     else:
-        print("\n⊘ Skipping document indexing (--skip-index)")
+        pass
 
     if not args.skip_classifier:
         try:
             train_classifier()
-        except Exception as e:
-            print(f"\n✗ Error training classifier: {e}")
+        except Exception:
             return 1
     else:
-        print("\n⊘ Skipping classifier training (--skip-classifier)")
+        pass
 
-    print("\n" + "=" * 60)
-    print("✓ RAG System Setup Complete!")
-    print("=" * 60)
-    print("\nNext steps:")
-    print("1. Start LLM API server (e.g., vLLM on port 8003)")
-    print("2. Configure backend/.env with LLM_API_URL")
-    print("3. Start backend: uv run uvicorn app:app --port 8001 --reload")
-    print("=" * 60 + "\n")
 
     return 0
 

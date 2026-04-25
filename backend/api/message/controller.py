@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+
 from fastapi import HTTPException, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
@@ -7,20 +8,26 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
+from api.message_citation_utils import remap_response_citations
 from constants import (
-    SSE_CHUNK_SIZE,
-    RELEVANCE_SIMILARITY_WEIGHT,
-    RELEVANCE_POSITION_WEIGHT,
     RELEVANCE_CHUNK_COUNT_WEIGHT,
+    RELEVANCE_POSITION_WEIGHT,
+    RELEVANCE_SIMILARITY_WEIGHT,
+    SSE_CHUNK_SIZE,
 )
-from db import Dialogue, Message, Source, Folder
-from settings import settings
+from db import Dialogue, Folder, Message, Source
 from services.rag_service import get_rag_service
+from settings import settings
 from utils.path_utils import strip_source_prefix
 
 from .code_parser import parse_and_execute_code
-from api.message_citation_utils import remap_response_citations
-from .models import CodeExecution, MessageFeedback, MessageResponse, SendMessage, SourceReference
+from .models import (
+    CodeExecution,
+    MessageFeedback,
+    MessageResponse,
+    SendMessage,
+    SourceReference,
+)
 
 
 def _sse_event(payload: dict) -> str:
@@ -122,7 +129,7 @@ def calculate_smart_relevance(
     """
     import math
 
-    total_chunks = sum(len(chunks) for chunks in chunks_by_source.values())
+    sum(len(chunks) for chunks in chunks_by_source.values())
     results = {}
 
     for source_id, chunks in chunks_by_source.items():

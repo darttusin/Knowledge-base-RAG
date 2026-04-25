@@ -1,9 +1,9 @@
 """RAG service for question answering with context retrieval."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-from collections.abc import Iterable
 
 from loguru import logger
 from outlier_detection import TopicClassifier
@@ -14,10 +14,10 @@ from rag import (
     create_embed_model,
     create_reranker,
 )
-from rag.chains import answer_stream
 from rag import (
     Settings as RagSettings,
 )
+from rag.chains import answer_stream
 from rag.models import RetrievedChunk
 from rag.retriever import retrieve, retrieve_with_query_transform, retrieve_with_rerank
 from rag.vectorstore import create_collection

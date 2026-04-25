@@ -5,6 +5,7 @@ def remap_response_citations(
 ) -> str:
     """Remap [§N] citations from chunk positions to deduplicated source indexes."""
     import re
+
     from loguru import logger
 
     position_to_source_id: dict[int, int] = {}

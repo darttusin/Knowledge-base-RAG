@@ -1,5 +1,8 @@
 import asyncio
 import contextlib
+import json
+import math
+import re
 
 from fastapi import HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -17,6 +20,7 @@ from constants import (
 )
 from db import Dialogue, Folder, Message, Source
 from services.rag_service import get_rag_service
+from services.title_service import generate_dialogue_title
 from settings import settings
 from utils.path_utils import strip_source_prefix
 
@@ -31,8 +35,6 @@ from .models import (
 
 
 def _sse_event(payload: dict) -> str:
-    import json
-
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
@@ -127,9 +129,6 @@ def calculate_smart_relevance(
     Returns:
         Dict of source_id -> (relevance_score, best_chunk_text)
     """
-    import math
-
-    sum(len(chunks) for chunks in chunks_by_source.values())
     results = {}
 
     for source_id, chunks in chunks_by_source.items():
@@ -308,11 +307,9 @@ async def generate_message_response(
     new_message.assistant_response = assistant_response
 
     # Log clean answer without markdown/formatting
-    from loguru import logger
     logger.info(f"RAG Response | User: {data.message[:100]}... | Answer: {assistant_response}")
 
     # Save source references as JSON array for database record
-    import json
     sources_json = [src.model_dump() for src in source_references]
     new_message.sources = json.dumps(sources_json) if sources_json else None
 
@@ -324,7 +321,6 @@ async def generate_message_response(
     )
 
     if should_generate_title:
-        from services.title_service import generate_dialogue_title
         try:
             new_title = generate_dialogue_title(data.message, rag_service)
             dialogue.name = new_title
@@ -505,14 +501,12 @@ async def send_message_stream(
             )
 
             new_message.assistant_response = assistant_response
-            import json
             sources_json = [src.model_dump() for src in source_references]
             new_message.sources = json.dumps(sources_json) if sources_json else None
 
             normalized_dialogue_name = (dialogue.name or "").strip().lower()
             should_generate_title = is_first_message and normalized_dialogue_name in {"", "new conversation"}
             if should_generate_title:
-                from services.title_service import generate_dialogue_title
                 try:
                     dialogue.name = generate_dialogue_title(data.message, rag_service)
                 except Exception as e:
@@ -560,7 +554,6 @@ async def set_message_feedback(
     message.feedback = data.feedback.value
 
     # Log feedback for future analysis and fine-tuning
-    from loguru import logger
     logger.info(
         f"User feedback: {data.feedback.value} | "
         f"Message ID: {data.message_id} | "
@@ -570,28 +563,3 @@ async def set_message_feedback(
     )
 
     await db.commit()
-
-
-def extract_sources_from_response(response: str) -> list[str]:
-    """Extract source citations from response text.
-
-    Looks for [§N] citations and converts them to PyTorch doc URLs.
-
-    Args:
-        response: Assistant response text
-
-    Returns:
-        List of source URLs
-    """
-    import re
-
-    sources = []
-    citation_pattern = r"\[§(\d+)\]"
-    citations = re.findall(citation_pattern, response)
-
-    if citations:
-        sources = [
-            f"https://pytorch.org/docs/stable/source_{n}.html" for n in set(citations)
-        ]
-
-    return sources

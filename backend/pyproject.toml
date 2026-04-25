@@ -17,7 +17,7 @@ dependencies = [
     "langchain-core>=1.2.28",
     "loguru>=0.7.0",
     "rag",
-    "outlier_detection",
+    "outlier-detection",
 ]
 
 [dependency-groups]
@@ -49,4 +49,4 @@ max-args = 7
 
 [tool.uv.sources]
 rag = { workspace = true }
-outlier_detection = { workspace = true }
+outlier-detection = { workspace = true }

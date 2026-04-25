@@ -1,12 +1,14 @@
+import re
+
+from loguru import logger
+
+
 def remap_response_citations(
     response: str,
     chunks_by_source: dict[int, list[tuple[int, float, str]]],
     sorted_source_references: list,
 ) -> str:
     """Remap [§N] citations from chunk positions to deduplicated source indexes."""
-    import re
-
-    from loguru import logger
 
     position_to_source_id: dict[int, int] = {}
     for source_id, chunks in chunks_by_source.items():

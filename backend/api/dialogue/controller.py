@@ -4,8 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from db import Dialogue
-from services.rag_service import RagService
-from services.title_service import generate_dialogue_title
 
 from .models import (
     CreateDialogue,

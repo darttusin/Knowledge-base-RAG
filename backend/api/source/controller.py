@@ -6,7 +6,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from db import Folder, Source
+from db import Source
 from services.rag_service import get_rag_service
 from settings import settings as app_settings
 

@@ -7,6 +7,7 @@ import type { ApiResult, UploadDocumentResponse } from "@/types/api"
 const ENDPOINTS = {
   upload: "/api/source",
   delete: (id: string) => `/api/source/${id}`,
+  move: (id: string) => `/api/source/${id}`,
 }
 
 /**
@@ -31,6 +32,20 @@ export async function uploadDocument(
       chunksCount: 0,
     },
   }
+}
+
+/**
+ * Move a document to a folder (or to root when folderId is null)
+ */
+export async function moveDocumentToFolder(
+  id: string,
+  folderId: string | null
+): Promise<ApiResult<{ success: boolean }>> {
+  const folderIdInt = folderId ? Number.parseInt(folderId, 10) : null
+  return safeRequest(async () => {
+    await api.patch(ENDPOINTS.move(id), { folder_id: folderIdInt })
+    return { success: true }
+  })
 }
 
 /**

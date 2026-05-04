@@ -3,5 +3,6 @@
 export * from "./auth"
 export * from "./conversations"
 export * from "./documents"
+export * from "./folders"
 export * from "./messages"
 export * from "./user"

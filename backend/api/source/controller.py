@@ -6,7 +6,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from db import Source
+from db import Folder, Source
 from services.rag_service import get_rag_service
 from settings import settings as app_settings
 
@@ -268,6 +268,32 @@ async def get_source(source_id: int, user_id: int, db: AsyncSession) -> SourceCo
         folder_id=source.folder_id,
         folder_path=source.folder.path if source.folder else None,
     )
+
+
+async def move_source(
+    source_id: int, folder_id: int | None, user_id: int, db: AsyncSession
+) -> None:
+    result = await db.execute(
+        select(Source).where(Source.id == source_id, Source.user_id == user_id)
+    )
+    source = result.scalar_one_or_none()
+
+    if not source:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Source not found"
+        )
+
+    if folder_id is not None:
+        result = await db.execute(
+            select(Folder).where(Folder.id == folder_id, Folder.user_id == user_id)
+        )
+        if not result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found"
+            )
+
+    source.folder_id = folder_id
+    await db.commit()
 
 
 async def delete_source(source_id: int, user_id: int, db: AsyncSession) -> None:

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.folder.schema import FolderCreateRequest, FolderResponse
+from api.folder.schema import FolderCreateRequest, FolderMoveRequest, FolderResponse
 from auth import get_current_user_id
 from db import Folder, Source, get_db
 
@@ -90,6 +90,73 @@ async def get_folders(
         )
         for folder, doc_count in folders_with_counts
     ]
+
+
+@router.patch("/{folder_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def move_folder(
+    folder_id: int,
+    request: FolderMoveRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move folder under a different parent (or to root if parent_id=null)."""
+    result = await db.execute(select(Folder).where(Folder.user_id == user_id))
+    all_folders = list(result.scalars().all())
+    folders_by_id = {f.id: f for f in all_folders}
+
+    folder = folders_by_id.get(folder_id)
+    if not folder:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found"
+        )
+
+    new_parent_id = request.parent_id
+
+    if new_parent_id is not None:
+        if new_parent_id == folder_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot move folder into itself",
+            )
+        if new_parent_id not in folders_by_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Target folder not found"
+            )
+        # Walk up from new parent to ensure the folder isn't one of its ancestors
+        cursor = folders_by_id[new_parent_id]
+        while cursor.parent_id is not None:
+            if cursor.parent_id == folder_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot move folder into its own descendant",
+                )
+            cursor = folders_by_id.get(cursor.parent_id)
+            if cursor is None:
+                break
+
+    if folder.parent_id == new_parent_id:
+        return
+
+    folder.parent_id = new_parent_id
+
+    # Rebuild paths for the moved folder and all of its descendants (BFS).
+    children_map: dict[int | None, list[Folder]] = {}
+    for f in all_folders:
+        children_map.setdefault(f.parent_id, []).append(f)
+
+    queue: list[Folder] = [folder]
+    while queue:
+        current = queue.pop(0)
+        parent_path = (
+            folders_by_id[current.parent_id].path
+            if current.parent_id is not None
+            else ""
+        )
+        current.path = f"{parent_path}/{current.name}"
+        for child in children_map.get(current.id, []):
+            queue.append(child)
+
+    await db.commit()
 
 
 @router.delete("/{folder_id}", status_code=status.HTTP_204_NO_CONTENT)

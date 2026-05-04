@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -21,7 +22,12 @@ interface DocumentRowProps {
   onDelete: (doc: Document) => void
   formatFileSize: (bytes: number) => string
   formatDate: (date: Date) => string
+  isSelected?: boolean
+  onSelectClick?: (e: React.MouseEvent) => void
+  getDragPayload?: () => { docIds: string[]; folderIds: string[] }
 }
+
+export const DOCUMENT_DRAG_MIME = "application/x-document-id"
 
 export function DocumentRow({
   document,
@@ -31,14 +37,54 @@ export function DocumentRow({
   onDelete,
   formatFileSize,
   formatDate,
+  isSelected = false,
+  onSelectClick,
+  getDragPayload,
 }: DocumentRowProps) {
   const Icon = document.type === "md" ? FileText : File
   const colorClass = FILE_EXTENSION_COLORS[document.type] || FILE_EXTENSION_COLORS.md
+  const [isDragging, setIsDragging] = useState(false)
+
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
+    const payload = getDragPayload?.() ?? { docIds: [document.id], folderIds: [] }
+    e.dataTransfer.setData(DOCUMENT_DRAG_MIME, payload.docIds.join(","))
+    if (payload.folderIds.length > 0) {
+      e.dataTransfer.setData("application/x-folder-id", payload.folderIds.join(","))
+    }
+    const totalCount = payload.docIds.length + payload.folderIds.length
+    e.dataTransfer.setData(
+      "text/plain",
+      totalCount > 1 ? `${totalCount} items` : document.name
+    )
+    e.dataTransfer.effectAllowed = "move"
+    setIsDragging(true)
+  }
+
+  const handleDragEnd = () => {
+    setIsDragging(false)
+  }
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey) {
+      e.preventDefault()
+      e.stopPropagation()
+      onSelectClick?.(e)
+      return
+    }
+    onPreview(document)
+  }
 
   return (
     <div
-      className="hover:bg-muted/30 group flex items-center gap-4 rounded-xl p-3 transition-colors cursor-pointer"
-      onClick={() => onPreview(document)}
+      draggable
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      className={cn(
+        "hover:bg-muted/30 group flex items-center gap-4 rounded-xl p-3 transition-colors cursor-pointer",
+        isDragging && "opacity-40",
+        isSelected && "bg-primary/15 hover:bg-primary/20"
+      )}
+      onClick={handleClick}
     >
       <div
         className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", colorClass)}

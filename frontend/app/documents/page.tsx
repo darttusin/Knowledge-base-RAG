@@ -85,6 +85,7 @@ export default function DocumentsPage() {
     handleDragLeave,
     handleDrop,
     findDocumentById,
+    moveDocument,
   } = useDocuments(currentFolderId)
 
   // Handle document ID from URL (only once)
@@ -122,6 +123,91 @@ export default function DocumentsPage() {
 
   // Get child folders of current folder
   const childFolders = folders.filter((f) => f.parentId === currentFolderId)
+
+  // Multi-selection state (Windows-explorer-like). Items keyed as `doc:N` / `folder:N`.
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
+  const lastSelectedIdRef = useRef<string | null>(null)
+
+  // Reset selection when folder changes
+  useEffect(() => {
+    setSelectedItems(new Set())
+    lastSelectedIdRef.current = null
+  }, [currentFolderId])
+
+  // Ordered list of all selectable items in display order (folders first, then docs)
+  const orderedSelectableIds = [
+    ...childFolders.map((f) => `folder:${f.id}`),
+    ...documents.map((d) => `doc:${d.id}`),
+  ]
+
+  const handleItemSelect = useCallback(
+    (key: string, e: React.MouseEvent) => {
+      if (e.shiftKey && lastSelectedIdRef.current) {
+        const lastIdx = orderedSelectableIds.indexOf(lastSelectedIdRef.current)
+        const curIdx = orderedSelectableIds.indexOf(key)
+        if (lastIdx >= 0 && curIdx >= 0) {
+          const [from, to] = lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx]
+          const range = orderedSelectableIds.slice(from, to + 1)
+          setSelectedItems(new Set(range))
+          return
+        }
+      }
+      if (e.metaKey || e.ctrlKey) {
+        setSelectedItems((prev) => {
+          const next = new Set(prev)
+          if (next.has(key)) next.delete(key)
+          else next.add(key)
+          return next
+        })
+        lastSelectedIdRef.current = key
+        return
+      }
+      // Plain modifier-less click on the item is handled by row's existing onClick (preview/open).
+      // Only modifier clicks reach here. But handle as single-select fallback if called directly.
+      setSelectedItems(new Set([key]))
+      lastSelectedIdRef.current = key
+    },
+    [orderedSelectableIds]
+  )
+
+  // Wrapped moveDocument that also clears selection after a successful move
+  const moveDocumentAndClear = useCallback(
+    async (documentId: string, targetFolderId: string | null) => {
+      await moveDocument(documentId, targetFolderId)
+      setSelectedItems(new Set())
+      lastSelectedIdRef.current = null
+    },
+    [moveDocument]
+  )
+
+  /** Returns ids (just key prefixes stripped) that should be dragged when starting drag on `key`. */
+  const getDragPayload = useCallback(
+    (key: string): { docIds: string[]; folderIds: string[] } => {
+      const payload = selectedItems.has(key) && selectedItems.size > 1
+        ? Array.from(selectedItems)
+        : [key]
+      const docIds: string[] = []
+      const folderIds: string[] = []
+      for (const item of payload) {
+        if (item.startsWith("doc:")) docIds.push(item.slice(4))
+        else if (item.startsWith("folder:")) folderIds.push(item.slice(7))
+      }
+      return { docIds, folderIds }
+    },
+    [selectedItems]
+  )
+
+  // Clear selection on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && selectedItems.size > 0) {
+        setSelectedItems(new Set())
+        lastSelectedIdRef.current = null
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [selectedItems])
 
   const { formatRelativeDate, formatFileSize } = useDateFormat()
 
@@ -262,7 +348,7 @@ export default function DocumentsPage() {
           {/* Folder Sidebar */}
           <div className="border-border/50 flex w-64 shrink-0 flex-col border-r overflow-hidden">
             <div className="flex h-full flex-col p-4">
-              <FolderTree />
+              <FolderTree onDocumentDrop={moveDocumentAndClear} />
             </div>
           </div>
 
@@ -329,7 +415,19 @@ export default function DocumentsPage() {
             )}
 
             {/* Documents List */}
-            <div ref={scrollAreaRef} className="flex-1 overflow-y-auto" role="region" aria-label="Documents list">
+            <div
+              ref={scrollAreaRef}
+              className="flex-1 overflow-y-auto"
+              role="region"
+              aria-label="Documents list"
+              onClick={(e) => {
+                // Clear selection when clicking the empty area (event reaches here only if no row caught it)
+                if (e.target === e.currentTarget) {
+                  setSelectedItems(new Set())
+                  lastSelectedIdRef.current = null
+                }
+              }}
+            >
               {!searchQuery && childFolders.length === 0 && documents.length === 0 ? (
                 <EmptyState
                   icon={FolderOpen}
@@ -357,6 +455,10 @@ export default function DocumentsPage() {
                         onRename={handleRenameFolder}
                         onDelete={handleDeleteFolder}
                         formatDate={formatRelativeDate}
+                        onDocumentDrop={moveDocumentAndClear}
+                        isSelected={selectedItems.has(`folder:${folder.id}`)}
+                        onSelectClick={(e) => handleItemSelect(`folder:${folder.id}`, e)}
+                        getDragPayload={() => getDragPayload(`folder:${folder.id}`)}
                       />
                     ))}
 
@@ -371,6 +473,9 @@ export default function DocumentsPage() {
                       onDelete={confirmDelete}
                       formatFileSize={formatFileSize}
                       formatDate={formatRelativeDate}
+                      isSelected={selectedItems.has(`doc:${doc.id}`)}
+                      onSelectClick={(e) => handleItemSelect(`doc:${doc.id}`, e)}
+                      getDragPayload={() => getDragPayload(`doc:${doc.id}`)}
                     />
                   ))}
                 </div>
@@ -397,7 +502,7 @@ export default function DocumentsPage() {
 
         {/* Preview Dialog */}
         <Dialog open={previewOpen} onOpenChange={closePreview}>
-          <DialogContent className="max-w-[98vw] w-[1800px]">
+          <DialogContent className="w-[95vw] sm:max-w-[1600px]">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <FileText className="h-5 w-5" />
@@ -408,13 +513,16 @@ export default function DocumentsPage() {
                 {selectedDocument && formatRelativeDate(selectedDocument.uploadedAt)}
               </DialogDescription>
             </DialogHeader>
-            <div className="mt-4 h-[75vh] w-full overflow-auto">
+            <div className="scrollbar-minimal bg-muted/30 mt-4 max-h-[75vh] w-full overflow-x-hidden overflow-y-auto rounded-xl">
               {selectedDocument?.type === "md" ? (
-                <div className="bg-muted/30 rounded-xl p-8">
-                  <MarkdownPreview content={selectedDocument.content} />
+                <div className="p-8">
+                  <MarkdownPreview
+                    content={selectedDocument.content}
+                    className="break-words prose-pre:whitespace-pre-wrap prose-pre:break-words prose-code:break-words prose-table:block prose-table:overflow-x-auto"
+                  />
                 </div>
               ) : (
-                <pre className="text-foreground bg-muted/30 rounded-xl p-6 font-mono text-sm whitespace-pre-wrap break-words">
+                <pre className="text-foreground p-6 font-mono text-sm whitespace-pre-wrap break-words">
                   {selectedDocument?.content}
                 </pre>
               )}

@@ -9,6 +9,10 @@ class FolderCreateRequest(BaseModel):
     parent_id: int | None = None
 
 
+class FolderMoveRequest(BaseModel):
+    parent_id: int | None = None
+
+
 class FolderResponse(BaseModel):
     id: int
     name: str

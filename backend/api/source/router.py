@@ -2,6 +2,7 @@ import io
 
 from fastapi import APIRouter, Depends, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import get_current_user_id
@@ -9,6 +10,10 @@ from db import get_db
 
 from . import controller
 from .models import ErrorMessage, SourceContent, SourceForList, SourcesList
+
+
+class SourceMoveRequest(BaseModel):
+    folder_id: int | None = None
 
 router = APIRouter(tags=["Source"], prefix="/api/source")
 
@@ -104,6 +109,25 @@ async def download_source(
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.patch(
+    "/{source_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        404: {"model": ErrorMessage, "description": "Source or folder not found"},
+        401: {"model": ErrorMessage, "description": "Unauthorized"},
+    },
+    summary="Переместить источник в папку",
+    description="Перемещает источник в указанную папку (или в корень, если folder_id=null). Требует JWT токен.",
+)
+async def move_source(
+    source_id: int,
+    request: SourceMoveRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await controller.move_source(source_id, request.folder_id, user_id, db)
 
 
 @router.delete(

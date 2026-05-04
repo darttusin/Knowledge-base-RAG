@@ -5,3 +5,5 @@
 __pycache__
 .next
 node_modules
+mutagen.yml
+mutagen.yml.lock

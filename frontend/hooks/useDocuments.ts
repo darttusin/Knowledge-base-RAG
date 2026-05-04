@@ -8,8 +8,10 @@ import {
   getDocumentContent,
   uploadDocument as apiUploadDocument,
   deleteDocument as apiDeleteDocument,
+  moveDocumentToFolder as apiMoveDocumentToFolder,
   type SearchIn,
 } from "@/lib/api"
+import { useFolderStore } from "@/lib/store/folder-store"
 
 // Debounce hook
 function useDebounce<T>(value: T, delay: number): T {
@@ -338,16 +340,30 @@ export function useDocuments(currentFolderId: string | null = null) {
     [uploadFiles]
   )
 
-  const moveDocument = useCallback((documentId: string, targetFolderId: string | null) => {
-    // TODO: Implement API call for moving
-    setDocuments((prev) =>
-      prev.map((doc) =>
-        doc.id === documentId
-          ? { ...doc, folderId: targetFolderId || "root", folderPath: "/" }
-          : doc
-      )
-    )
-  }, [])
+  const moveDocument = useCallback(
+    async (documentId: string, targetFolderId: string | null) => {
+      // No-op if dropping into the same folder we're already viewing
+      if (targetFolderId === currentFolderId) return
+
+      const previous = documents
+      const previousTotal = totalCount
+
+      // Optimistic: remove from this folder's view
+      setDocuments((prev) => prev.filter((doc) => doc.id !== documentId))
+      setTotalCount((prev) => Math.max(0, prev - 1))
+
+      const result = await apiMoveDocumentToFolder(documentId, targetFolderId)
+      if (!result.success) {
+        setDocuments(previous)
+        setTotalCount(previousTotal)
+        throw new Error(result.error)
+      }
+
+      // Refresh folder counts in sidebar
+      void useFolderStore.getState().loadFolders()
+    },
+    [documents, totalCount, currentFolderId]
+  )
 
   const findDocumentById = useCallback(
     (documentId: string) => {

@@ -4,7 +4,6 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { useCopyFeedback } from "@/hooks/useCopyFeedback"
 import {
@@ -59,7 +58,7 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-2xl gap-0 overflow-hidden p-0">
+      <DialogContent className="w-[90vw] gap-0 overflow-hidden p-0 max-h-[85vh] sm:max-w-[1400px]">
         <DialogHeader className="border-border bg-card/50 border-b p-6 pb-4">
           <div className="flex items-start gap-4">
             <div
@@ -79,7 +78,7 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
           </div>
         </DialogHeader>
 
-        <ScrollArea className="max-h-[calc(85vh-120px)] flex-1">
+        <div className="scrollbar-minimal max-h-[calc(85vh-120px)] overflow-x-hidden overflow-y-auto">
           <div className="space-y-6 p-6">
             {/* Folder path if exists */}
             {source.folderPath && (
@@ -216,7 +215,7 @@ export function SourceDetailModal({ source, open, onOpenChange }: SourceDetailMo
               </>
             )}
           </div>
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   )

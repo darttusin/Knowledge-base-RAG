@@ -1,6 +1,11 @@
 import { create } from "zustand"
 import { devtools } from "zustand/middleware"
-import { getFolders, type BackendFolder } from "@/lib/api"
+import {
+  createFolder as createFolderApi,
+  getFolders,
+  moveFolderToParent as moveFolderApi,
+  type BackendFolder,
+} from "@/lib/api"
 
 export interface Folder {
   id: string
@@ -20,10 +25,10 @@ interface FolderState {
 
 interface FolderActions {
   loadFolders: () => Promise<void>
-  createFolder: (name: string, parentId?: string | null) => void
+  createFolder: (name: string, parentId?: string | null) => Promise<void>
   updateFolder: (id: string, name: string) => void
   deleteFolder: (id: string) => void
-  moveFolder: (id: string, targetParentId: string | null) => void
+  moveFolder: (id: string, targetParentId: string | null) => Promise<void>
   setCurrentFolder: (id: string | null) => void
   toggleFolderExpanded: (id: string) => void
 }
@@ -77,20 +82,18 @@ export const useFolderStore = create<FolderStore>()(
         }
       },
 
-      createFolder: (name, parentId = null) => {
-        const id = `folder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      createFolder: async (name, parentId = null) => {
         const folders = get().folders
-        const path = parentId ? `${buildPath(folders, parentId)}/${name}` : `/${name}`
+        const isTopLevel = !parentId || parentId === "root"
+        const path = isTopLevel ? `/${name}` : `${buildPath(folders, parentId!)}/${name}`
+        const parentIdInt = isTopLevel ? null : Number.parseInt(parentId!, 10)
 
-        const newFolder: Folder = {
-          id,
-          name,
-          path,
-          parentId: parentId || "root",
-          createdAt: new Date(),
-          documentCount: 0,
+        const result = await createFolderApi({ name, path, parent_id: parentIdInt })
+        if (!result.success) {
+          throw new Error(result.error)
         }
 
+        const newFolder = adaptBackendFolder(result.data)
         set((state) => ({
           folders: [...state.folders, newFolder],
         }))
@@ -148,22 +151,21 @@ export const useFolderStore = create<FolderStore>()(
         })
       },
 
-      moveFolder: (id, targetParentId) => {
-        set((state) => ({
-          folders: state.folders.map((f) => {
-            if (f.id === id) {
-              const newPath = targetParentId
-                ? `${buildPath(state.folders, targetParentId)}/${f.name}`
-                : `/${f.name}`
-              return {
-                ...f,
-                parentId: targetParentId || "root",
-                path: newPath,
-              }
-            }
-            return f
-          }),
-        }))
+      moveFolder: async (id, targetParentId) => {
+        const folderIdInt = Number.parseInt(id, 10)
+        const isTopLevel = !targetParentId || targetParentId === "root"
+        const parentIdInt = isTopLevel ? null : Number.parseInt(targetParentId!, 10)
+
+        const result = await moveFolderApi(folderIdInt, parentIdInt)
+        if (!result.success) {
+          throw new Error(result.error)
+        }
+
+        // Re-fetch from backend so paths of moved folder + descendants are authoritative
+        const refreshed = await getFolders()
+        if (refreshed.success) {
+          set({ folders: refreshed.data.map(adaptBackendFolder) })
+        }
       },
 
       setCurrentFolder: (id) => {

@@ -33,6 +33,9 @@ services:
       - POSTGRES_DATABASE=${POSTGRES_DATABASE:-knowledge_base_rag}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - JWT_ALGORITHM=HS256
+      - RAG_ENABLED=${RAG_ENABLED:-true}
+      - RAG_LLM_API_URL=${RAG_LLM_API_URL:-}
+      - RAG_LLM_API_KEY=${RAG_LLM_API_KEY:-}
     ports:
       - "8001:8001"
     depends_on:
@@ -44,6 +47,7 @@ services:
       - ./backend:/app/backend
       - ./rag:/app/rag
       - ./outlier-detection:/app/outlier-detection
+      - ./data:/app/backend/data
     networks:
       - kb_network
       - zz_backend_executor
@@ -110,10 +114,15 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8001
       - NEXT_PUBLIC_RAG_API_URL=http://localhost:8000
+      - WATCHPACK_POLLING=true
     ports:
       - "3000:3000"
     depends_on:
       - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
     networks:
       - kb_network
     command: pnpm dev

@@ -9,14 +9,19 @@ def answer(
     model: ChatModel,
     question: str,
     chunks: Sequence[RetrievedChunk],
+    history: list[dict] | None = None,
 ) -> str:
     prompt = build_rag_prompt(question, chunks)
-    return model.invoke(
-        [
-            {"role": "system", "content": SYSTEM_INSTRUCTIONS},
-            {"role": "user", "content": prompt},
-        ]
-    )
+
+    # Build message list: system + history + current question
+    messages = [{"role": "system", "content": SYSTEM_INSTRUCTIONS}]
+
+    if history:
+        messages.extend(history)
+
+    messages.append({"role": "user", "content": prompt})
+
+    return model.invoke(messages)
 
 
 def answer_without_context(model: ChatModel, question: str) -> str:
@@ -35,11 +40,16 @@ def answer_stream(
     model: ChatModel,
     question: str,
     chunks: Sequence[RetrievedChunk],
+    history: list[dict] | None = None,
 ):
     prompt = build_rag_prompt(question, chunks)
-    return model.stream(
-        [
-            {"role": "system", "content": SYSTEM_INSTRUCTIONS},
-            {"role": "user", "content": prompt},
-        ]
-    )
+
+    # Build message list: system + history + current question
+    messages = [{"role": "system", "content": SYSTEM_INSTRUCTIONS}]
+
+    if history:
+        messages.extend(history)
+
+    messages.append({"role": "user", "content": prompt})
+
+    return model.stream(messages)

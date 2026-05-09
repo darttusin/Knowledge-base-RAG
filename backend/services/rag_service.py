@@ -167,6 +167,7 @@ class RagService:
         strategy: str = "rerank",
         check_topic: bool = True,
         reject_off_topic: bool = False,
+        history: list[dict] | None = None,
     ) -> RagResponse:
         """Answer question using RAG.
 
@@ -175,6 +176,7 @@ class RagService:
             strategy: Retrieval strategy - "basic", "rerank", or "query_transform"
             check_topic: Whether to check if question is on-topic
             reject_off_topic: Whether to reject off-topic questions
+            history: Conversation history as list of message dicts
 
         Returns:
             RagResponse with answer, chunks, and topic information
@@ -197,8 +199,8 @@ class RagService:
         # Retrieve relevant chunks
         chunks = self.retrieve_chunks(question, strategy=strategy)
 
-        # Generate answer
-        answer_text = answer(self.chat_model, question, chunks)
+        # Generate answer with history
+        answer_text = answer(self.chat_model, question, chunks, history=history)
 
         return RagResponse(
             answer=answer_text,
@@ -213,6 +215,7 @@ class RagService:
         strategy: str = "rerank",
         check_topic: bool = True,
         reject_off_topic: bool = False,
+        history: list[dict] | None = None,
     ) -> RagStreamResponse:
         """Answer question using RAG with token streaming."""
         is_on_topic = True
@@ -235,7 +238,7 @@ class RagService:
                 )
 
         chunks = self.retrieve_chunks(question, strategy=strategy)
-        stream = answer_stream(self.chat_model, question, chunks)
+        stream = answer_stream(self.chat_model, question, chunks, history=history)
 
         return RagStreamResponse(
             stream=stream,

@@ -55,5 +55,9 @@ class Settings(BaseSettings):
     CODE_EXECUTOR_TIMEOUT: int = 10
     CODE_EXECUTOR_MAX_CODE_LENGTH: int = 10000
 
+    # Conversation History Settings
+    CONVERSATION_HISTORY_ENABLED: bool = True
+    CONVERSATION_MAX_HISTORY_MESSAGES: int = 10  # Max messages to include (5 turns)
+
 
 settings = Settings()  # type: ignore[call-arg]

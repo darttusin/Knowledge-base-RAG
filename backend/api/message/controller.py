@@ -34,6 +34,43 @@ from .models import (
 )
 
 
+def _build_conversation_history(
+    messages: list[Message],
+    max_messages: int,
+) -> list[dict]:
+    """Build conversation history from dialogue messages.
+
+    Args:
+        messages: List of Message objects from dialogue
+        max_messages: Maximum number of messages to include
+
+    Returns:
+        List of message dicts with role and content
+    """
+    if not messages or max_messages <= 0:
+        return []
+
+    # Take only the most recent messages
+    recent_messages = messages[-max_messages:] if len(messages) > max_messages else messages
+
+    history = []
+    for msg in recent_messages:
+        # Add user message
+        if msg.user_message:
+            history.append({
+                "role": "user",
+                "content": msg.user_message,
+            })
+        # Add assistant response (if exists)
+        if msg.assistant_response:
+            history.append({
+                "role": "assistant",
+                "content": msg.assistant_response,
+            })
+
+    return history
+
+
 def _sse_event(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
@@ -228,12 +265,24 @@ async def generate_message_response(
     try:
         rag_service = get_rag_service()
 
+        # Build conversation history (only if enabled)
+        conversation_history = []
+        if settings.CONVERSATION_HISTORY_ENABLED and dialogue.messages:
+            conversation_history = _build_conversation_history(
+                dialogue.messages,
+                settings.CONVERSATION_MAX_HISTORY_MESSAGES,
+            )
+
+        # Only check topic on first message
+        should_check_topic = settings.OUTLIER_DETECTION_ENABLED and is_first_message
+
         # Answer question using local RAG
         rag_response = rag_service.answer_question(
             question=data.message,
             strategy="query_transform",  # Full RAG with query rewriting + HyDE
-            check_topic=settings.OUTLIER_DETECTION_ENABLED,
+            check_topic=should_check_topic,
             reject_off_topic=settings.OUTLIER_REJECT_OFF_TOPIC,
+            history=conversation_history,
         )
 
         assistant_response = rag_response.answer
@@ -382,11 +431,24 @@ async def send_message_stream(
 
     try:
         rag_service = get_rag_service()
+
+        # Build conversation history (only if enabled)
+        conversation_history = []
+        if settings.CONVERSATION_HISTORY_ENABLED and dialogue.messages:
+            conversation_history = _build_conversation_history(
+                dialogue.messages,
+                settings.CONVERSATION_MAX_HISTORY_MESSAGES,
+            )
+
+        # Only check topic on first message
+        should_check_topic = settings.OUTLIER_DETECTION_ENABLED and is_first_message
+
         rag_response = rag_service.answer_question_stream(
             question=data.message,
             strategy="query_transform",
-            check_topic=settings.OUTLIER_DETECTION_ENABLED,
+            check_topic=should_check_topic,
             reject_off_topic=settings.OUTLIER_REJECT_OFF_TOPIC,
+            history=conversation_history,
         )
     except RuntimeError as e:
         await db.rollback()

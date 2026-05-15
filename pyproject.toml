@@ -13,6 +13,7 @@ members = [
     "rag",
     "outlier-detection",
     "dataset-prep",
+    "lora-train",
 ]
 
 [tool.uv.sources]
@@ -20,6 +21,7 @@ torch-parser = { workspace = true }
 rag = { workspace = true }
 outlier-detection = { workspace = true }
 dataset-prep = { workspace = true }
+lora-train = { workspace = true }
 
 [tool.ruff.lint]
 select = ["F", "E", "W", "C90", "I", "S", "BLE", "T20", "ARG", "ERA", "PLR0913"]

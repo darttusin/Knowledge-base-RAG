@@ -1,0 +1,20 @@
+[project]
+name = "dataset-prep"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "pandas>=2.2.0",
+    "scikit-learn>=1.6.0",
+    "beautifulsoup4>=4.12.0",
+    "markdownify>=0.13.0",
+    "lxml>=6.0.0",
+    "loguru>=0.7.3",
+    "tqdm>=4.66.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dataset_prep"]

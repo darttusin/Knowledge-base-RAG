@@ -70,6 +70,27 @@ def _build_parser() -> argparse.ArgumentParser:
         default="wandb",
         choices=["wandb", "tensorboard", "none"],
     )
+    p.add_argument(
+        "--gradient-checkpointing",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Save VRAM by recomputing activations during backward pass. "
+            "Default: True (safe for any GPU). Disable with --no-gradient-checkpointing "
+            "if you have spare VRAM (e.g. PRO 6000 96GB) — gives ~1.5-2x speedup."
+        ),
+    )
+    p.add_argument(
+        "--optim",
+        type=str,
+        default="paged_adamw_8bit",
+        choices=["paged_adamw_8bit", "adamw_torch", "adamw_8bit", "adamw_torch_fused"],
+        help=(
+            "Optimizer. paged_adamw_8bit is safer (handles VRAM pressure via "
+            "CPU paging), but for plain LoRA on a roomy GPU adamw_torch is "
+            "~20-30%% faster. adamw_torch_fused is fastest if torch supports it."
+        ),
+    )
 
     return p
 
@@ -114,6 +135,8 @@ def main() -> None:
             seed=args.seed,
             report_to=args.report_to,
             run_name=args.run_name,
+            gradient_checkpointing=args.gradient_checkpointing,
+            optim=args.optim,
         ),
     )
     run_training(cfg)

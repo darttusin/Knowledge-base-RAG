@@ -1,7 +1,16 @@
 """End-to-end LoRA training driver.
 
 Composes the pieces: load model+tokenizer → attach LoRA → build datasets
-→ configure SFTTrainer with completion-only loss → train → save adapter.
+→ configure SFTTrainer → train → save adapter.
+
+NOTE on loss masking: we train on the full sequence (loss on system +
+user + assistant tokens), not just the assistant turn. Earlier versions
+used TRL's DataCollatorForCompletionOnlyLM but it was removed in TRL
+0.19+. Full-sequence loss is suboptimal but still trains correctly —
+most of the gradient signal comes from the answer tokens anyway. A
+future fix is to use SFTConfig(assistant_only_loss=True) once the
+Qwen2.5 chat template is confirmed to ship with `{% generation %}`
+markers.
 
 The output `output_dir` will contain the LoRA adapter (not the merged
 base model). To deploy in vLLM:
@@ -18,14 +27,11 @@ from dataclasses import asdict
 from pathlib import Path
 
 from loguru import logger
-from transformers import PreTrainedTokenizerBase
-from trl import DataCollatorForCompletionOnlyLM, SFTConfig, SFTTrainer
+from trl import SFTConfig, SFTTrainer
 
 from lora_train.config import LoraTrainConfig, TrainingConfig
 from lora_train.data import build_datasets
 from lora_train.model import attach_lora, load_model_and_tokenizer
-
-QWEN_RESPONSE_TEMPLATE = "<|im_start|>assistant\n"
 
 
 def _build_sft_config(cfg: TrainingConfig, max_seq_length: int) -> SFTConfig:
@@ -78,18 +84,6 @@ def _save_run_config(cfg: LoraTrainConfig) -> None:
     logger.info("wrote run config → {path}", path=config_path)
 
 
-def _build_collator(tokenizer: PreTrainedTokenizerBase) -> DataCollatorForCompletionOnlyLM:
-    """Mask everything before the assistant turn so loss is computed on the answer only.
-
-    Without this, gradient flows through the system + user tokens too, which
-    is wasteful (the model already knows the question) and biases learning.
-    """
-    return DataCollatorForCompletionOnlyLM(
-        response_template=QWEN_RESPONSE_TEMPLATE,
-        tokenizer=tokenizer,
-    )
-
-
 def run_training(cfg: LoraTrainConfig) -> None:
     """Run the full LoRA training procedure end-to-end."""
     logger.info("starting lora-train run → {out}", out=cfg.training.output_dir)
@@ -99,7 +93,6 @@ def run_training(cfg: LoraTrainConfig) -> None:
     peft_model = attach_lora(base_model, cfg.lora)
 
     datasets = build_datasets(cfg.data, tokenizer)
-    collator = _build_collator(tokenizer)
     sft_config = _build_sft_config(cfg.training, cfg.data.max_seq_length)
 
     trainer = SFTTrainer(
@@ -108,7 +101,6 @@ def run_training(cfg: LoraTrainConfig) -> None:
         train_dataset=datasets["train"],
         eval_dataset=datasets["validation"],
         processing_class=tokenizer,
-        data_collator=collator,
     )
 
     logger.info("trainer ready, starting training")

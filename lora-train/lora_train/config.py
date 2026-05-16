@@ -10,9 +10,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_SYSTEM_PROMPT = (
-    "You are an expert PyTorch assistant. Answer questions about the PyTorch "
-    "deep learning framework clearly and concisely. When showing code, use "
-    "fenced code blocks with the `python` language tag."
+    "You are an expert PyTorch assistant. Answer the user's question using ONLY "
+    "the information provided in the Context. If the Context does not contain "
+    "enough information to answer the question reliably, say so explicitly "
+    "instead of guessing. When showing code, use fenced code blocks with the "
+    "`python` language tag."
 )
 
 DEFAULT_LORA_TARGETS = (

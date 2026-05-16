@@ -1,10 +1,18 @@
 """End-to-end dataset preparation pipeline.
 
 Reads the raw StackOverflow CSV, cleans HTML, filters, deduplicates,
-and writes train/val JSONL files ready for SFT.
+splits, retrieves PyTorch documentation context for each question, and
+injects adversarial refusal examples. Writes train/val JSONL files
+ready for RAG-aware SFT.
 
 Output schema (one JSON object per line):
-    {"question": "...", "answer": "...", "score": 39}
+    {
+        "question": "...",
+        "answer": "...",
+        "score": 39,
+        "context": "...",         // retrieved top-k chunks joined
+        "is_adversarial": false   // true for synthetic refusal examples
+    }
 """
 
 from __future__ import annotations
@@ -20,6 +28,11 @@ from tqdm import tqdm
 from dataset_prep.cleaning import html_to_markdown
 from dataset_prep.dedup import deduplicate
 from dataset_prep.filtering import FilterConfig, Pair, filter_pairs
+from dataset_prep.retrieval import (
+    RetrievalConfig,
+    enrich_and_augment,
+    load_retrieval_context,
+)
 from dataset_prep.splitting import stratified_split
 
 REQUIRED_COLUMNS = ("question_body", "answer_body", "answer_score")
@@ -32,6 +45,7 @@ class PipelineConfig:
     val_fraction: float = 0.05
     seed: int = 42
     filter_config: FilterConfig = field(default_factory=FilterConfig)
+    retrieval_config: RetrievalConfig = field(default_factory=RetrievalConfig)
 
 
 def _load_raw(csv_path: Path) -> pd.DataFrame:
@@ -66,7 +80,13 @@ def _write_jsonl(path: Path, pairs: list[Pair]) -> None:
     with path.open("w", encoding="utf-8") as f:
         for p in pairs:
             json.dump(
-                {"question": p.question, "answer": p.answer, "score": p.score},
+                {
+                    "question": p.question,
+                    "answer": p.answer,
+                    "score": p.score,
+                    "context": p.context,
+                    "is_adversarial": p.is_adversarial,
+                },
                 f,
                 ensure_ascii=False,
             )
@@ -75,12 +95,20 @@ def _write_jsonl(path: Path, pairs: list[Pair]) -> None:
 
 
 def run_pipeline(config: PipelineConfig) -> dict[str, int]:
-    """Run the full prep pipeline and return summary counts."""
+    """Run the full RAG-aware prep pipeline and return summary counts."""
     df = _load_raw(config.csv_path)
     cleaned = _clean_rows(df)
     filtered, _ = filter_pairs(cleaned, config.filter_config)
     deduped = deduplicate(filtered)
-    train, val = stratified_split(deduped, config.val_fraction, config.seed)
+    train_raw, val_raw = stratified_split(deduped, config.val_fraction, config.seed)
+
+    logger.info("loading retrieval context (chromadb + embedding model)")
+    retrieval_ctx = load_retrieval_context(config.retrieval_config)
+
+    logger.info("enriching train split with context + adversarial")
+    train = enrich_and_augment(train_raw, retrieval_ctx)
+    logger.info("enriching val split with context + adversarial")
+    val = enrich_and_augment(val_raw, retrieval_ctx)
 
     _write_jsonl(config.output_dir / "train.jsonl", train)
     _write_jsonl(config.output_dir / "val.jsonl", val)
@@ -91,6 +119,8 @@ def run_pipeline(config: PipelineConfig) -> dict[str, int]:
         "after_dedup": len(deduped),
         "train": len(train),
         "val": len(val),
+        "train_adversarial": sum(1 for p in train if p.is_adversarial),
+        "val_adversarial": sum(1 for p in val if p.is_adversarial),
     }
     logger.info("pipeline done: {summary}", summary=summary)
     return summary

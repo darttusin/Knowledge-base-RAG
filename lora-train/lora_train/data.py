@@ -1,14 +1,26 @@
 """Convert prepared JSONL into HuggingFace Datasets with chat templates applied.
 
-Input (from `dataset-prep`):
-    {"question": "...", "answer": "...", "score": 42}
+Input (from `dataset-prep`, RAG-aware):
+    {
+        "question": "...",
+        "answer": "...",
+        "score": 42,
+        "context": "...",          // top-k retrieved PyTorch doc chunks
+        "is_adversarial": false    // true for synthetic refusal examples
+    }
+
+The user turn is constructed as:
+    Context:
+    {context}
+
+    Question: {question}
+
+So the model is trained to ground its answer in the provided context —
+matching the format used at inference time in the production RAG flow.
 
 Output rows fed to SFTTrainer:
     {"text": "<|im_start|>system\\n...<|im_end|>\\n<|im_start|>user\\n...
               <|im_end|>\\n<|im_start|>assistant\\n...<|im_end|>"}
-
-The chat template is applied via the model's tokenizer so the format
-matches whatever the base model expects (Qwen2.5 ChatML in our case).
 """
 
 from __future__ import annotations
@@ -21,10 +33,14 @@ from lora_train.config import DataConfig
 
 
 def _build_messages(example: dict, system_prompt: str) -> dict:
+    user_content = (
+        f"Context:\n{example['context']}\n\n"
+        f"Question: {example['question']}"
+    )
     return {
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": example["question"]},
+            {"role": "user", "content": user_content},
             {"role": "assistant", "content": example["answer"]},
         ]
     }

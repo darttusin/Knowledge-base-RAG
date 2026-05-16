@@ -54,6 +54,8 @@ class Pair:
     question: str
     answer: str
     score: int
+    context: str = ""
+    is_adversarial: bool = False
 
 
 def filter_pairs(

@@ -1,7 +1,9 @@
 [project]
 name = "lora-train"
 version = "0.1.0"
-requires-python = ">=3.13"
+# 3.12 — это то, что стоит в большинстве PyTorch-шаблонов vast.ai.
+# Код не использует 3.13-специфичных фич, можно опускать ниже при нужде.
+requires-python = ">=3.12"
 # NOTE: this module is CUDA + Linux only. Install on the vast.ai server,
 # not on macOS/CPU. bitsandbytes has no macOS wheel; torch wheel must
 # match the CUDA version of the rented GPU.

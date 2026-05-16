@@ -59,7 +59,7 @@ def _build_sft_config(cfg: TrainingConfig, max_seq_length: int) -> SFTConfig:
         seed=cfg.seed,
         report_to=cfg.report_to,
         run_name=cfg.run_name,
-        max_seq_length=max_seq_length,
+        max_length=max_seq_length,
         dataset_text_field="text",
         packing=False,
         load_best_model_at_end=True,

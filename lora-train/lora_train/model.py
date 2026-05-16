@@ -53,7 +53,7 @@ def load_model_and_tokenizer(
         qlora=config.use_qlora,
     )
     load_kwargs: dict = {
-        "torch_dtype": torch.bfloat16,
+        "dtype": torch.bfloat16,
         "device_map": "auto",
         "trust_remote_code": config.trust_remote_code,
     }

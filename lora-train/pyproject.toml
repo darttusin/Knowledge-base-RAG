@@ -5,18 +5,26 @@ version = "0.1.0"
 # Код не использует 3.13-специфичных фич, можно опускать ниже при нужде.
 requires-python = ">=3.12"
 # NOTE: this module is CUDA + Linux only. Install on the vast.ai server,
-# not on macOS/CPU. bitsandbytes has no macOS wheel; torch wheel must
-# match the CUDA version of the rented GPU.
+# not on macOS/CPU. bitsandbytes has no macOS wheel.
+#
+# Pinned upper bounds:
+#   - transformers <5: v5 changed several APIs we depend on
+#   - trl <1.0:        v1 removed DataCollatorForCompletionOnlyLM
+#   - datasets <4:     v4 changed schema handling, not tested here
+#   - bnb <0.50:       v0.49 has known instability with paged optims
+#
+# torch is installed separately on the server from PyTorch's CUDA-pinned
+# index (see README / install steps) so the version here is only a floor.
 dependencies = [
-    "torch>=2.4.0",
-    "transformers>=4.46.0",
-    "peft>=0.13.0",
-    "bitsandbytes>=0.44.0; platform_system != 'Darwin'",
-    "trl>=0.12.0",
-    "accelerate>=1.0.0",
-    "datasets>=3.0.0",
+    "torch>=2.5,<2.8",
+    "transformers>=4.46,<5",
+    "peft>=0.13,<0.20",
+    "bitsandbytes>=0.44,<0.50; platform_system != 'Darwin'",
+    "trl>=0.12,<1.0",
+    "accelerate>=1.0,<2.0",
+    "datasets>=3.0,<4.0",
     "loguru>=0.7.3",
-    "wandb>=0.18.0",
+    "wandb>=0.18.0,<1.0",
 ]
 
 [build-system]

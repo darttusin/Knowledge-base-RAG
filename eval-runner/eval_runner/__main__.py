@@ -69,9 +69,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--llm-timeout", type=float)
 
     # === judge LLM ===
+    # No --judge-api-key flag: vLLM endpoints don't validate it, and for
+    # cloud judges (OpenAI etc.) put the key in a --config JSON preset.
     p.add_argument("--judge-model", type=str)
     p.add_argument("--judge-api-url", type=str)
-    p.add_argument("--judge-api-key", type=str)
 
     # === eval data ===
     p.add_argument("--eval-csv-path", type=str)
@@ -137,7 +138,6 @@ def _build_run_config(args: argparse.Namespace) -> RunConfig:
         "llm_timeout": args.llm_timeout,
         "judge_model": args.judge_model,
         "judge_api_url": args.judge_api_url,
-        "judge_api_key": args.judge_api_key,
         "eval_csv_path": args.eval_csv_path,
         "eval_sample_size": args.eval_sample_size,
         "eval_min_answer_score": args.eval_min_answer_score,
@@ -183,9 +183,9 @@ def main() -> None:
     if not cfg.llm_api_url:
         logger.error("llm_api_url is required (point at your vLLM endpoint)")
         sys.exit(1)
-    if cfg.compute_ragas and not (cfg.judge_api_url and cfg.judge_api_key):
+    if cfg.compute_ragas and not cfg.judge_api_url:
         logger.warning(
-            "compute_ragas=True but judge_api_url/judge_api_key empty — "
+            "compute_ragas=True but judge_api_url empty — "
             "ragas step will no-op. Pass --no-ragas to silence."
         )
 

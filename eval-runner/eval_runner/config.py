@@ -42,9 +42,13 @@ class RunConfig:
     llm_timeout: float = 60.0
 
     # === Judge LLM (for RAGAS) ===
+    # judge_api_key defaults to "EMPTY" because vLLM endpoints don't
+    # validate the key but langchain_openai.ChatOpenAI requires a
+    # non-empty string. Override via the JSON config file if you point
+    # the judge at a cloud provider (OpenAI, OpenRouter, …).
     judge_model: str = "gpt-4o-mini"
     judge_api_url: str = ""
-    judge_api_key: str = ""
+    judge_api_key: str = "EMPTY"
 
     # === Eval dataset ===
     eval_csv_path: str = "data/stackoverflow-pytorch.csv"

@@ -111,10 +111,8 @@ def _add_semantic_similarity(per_row: pd.DataFrame, cfg: RunConfig) -> pd.DataFr
 
 def _maybe_add_ragas(per_row: pd.DataFrame, cfg: RunConfig) -> pd.DataFrame:
     """Append faithfulness / answer_relevancy / context_recall to per_row."""
-    if not cfg.judge_api_url or not cfg.judge_api_key:
-        logger.error(
-            "RAGAS enabled but judge_api_url/judge_api_key empty — skipping"
-        )
+    if not cfg.judge_api_url:
+        logger.error("RAGAS enabled but judge_api_url empty — skipping")
         return per_row
 
     ragas_input = pd.DataFrame(

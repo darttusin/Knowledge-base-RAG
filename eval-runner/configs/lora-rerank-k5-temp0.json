@@ -1,0 +1,11 @@
+{
+  "_comment": "Phase 2 sweep — temperature=0 (fully deterministic generation).",
+  "llm_model": "pytorch-rag",
+  "retriever_type": "rerank",
+  "top_k": 5,
+  "fetch_k": 20,
+  "llm_temperature": 0.0,
+  "wandb_run_name": "lora-rerank-k5-temp0",
+  "wandb_tags": ["phase:2", "sweep:temp", "rerank", "lora"],
+  "description": "Phase 2: temperature=0 (deterministic) — compare to default 0.1"
+}

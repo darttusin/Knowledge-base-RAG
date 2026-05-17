@@ -1,23 +1,27 @@
 """CLI entrypoint.
 
-Two usage patterns:
+Three usage patterns:
 
   1. Pure CLI (all flags):
         uv run python -m eval_runner \\
             --llm-model "qwen-base" \\
             --llm-api-url http://server:8000/v1 \\
             --judge-api-url https://api.openai.com/v1 \\
-            --judge-api-key sk-... \\
             --retriever-type rerank \\
             --top-k 5 \\
             --wandb-run-name "qwen-base-rerank-k5"
 
-  2. JSON preset + overrides:
-        uv run python -m eval_runner \\
-            --config configs/lora_rerank.json \\
-            --wandb-run-name "lora-rerank-debug-attempt-3"
+  2. Single JSON preset:
+        uv run python -m eval_runner --config configs/lora_rerank.json
 
-Any CLI flag overrides the corresponding field from --config.
+  3. Layered presets (recommended for an experiment matrix):
+        uv run python -m eval_runner \\
+            --config configs/_base.json \\
+            --config configs/lora-rerank-k5.json \\
+            --llm-api-url http://193.222.57.16:44090/v1
+
+  Last source wins: defaults → first --config → next --config → CLI flags.
+
 Field names in the JSON file match RunConfig attribute names exactly.
 """
 
@@ -46,8 +50,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--config",
         type=Path,
-        default=None,
-        help="Path to JSON preset. CLI flags override file values.",
+        action="append",
+        default=[],
+        help=(
+            "Path to JSON preset. Repeatable: later --config files overlay "
+            "earlier ones (last value wins). CLI flags override all files. "
+            "Typical use: --config configs/_base.json --config configs/lora-rerank-k5.json"
+        ),
     )
 
     # === retriever ===
@@ -108,18 +117,22 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _load_json_config(path: Path) -> dict[str, Any]:
+    """Load a JSON preset. Keys starting with `_` are treated as comments
+    (since JSON has no comment syntax) and stripped before merging."""
     if not path.exists():
         logger.error("config file not found: {p}", p=path)
         sys.exit(1)
     with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+        raw = json.load(f)
+    return {k: v for k, v in raw.items() if not k.startswith("_")}
 
 
 def _build_run_config(args: argparse.Namespace) -> RunConfig:
-    """Layer: defaults → JSON file → CLI flags (last wins)."""
+    """Layer: defaults → JSON file(s) in order → CLI flags (last wins)."""
     overrides: dict[str, Any] = {}
-    if args.config is not None:
-        overrides.update(_load_json_config(args.config))
+    for cfg_path in args.config:
+        logger.info("loading config overlay: {p}", p=cfg_path)
+        overrides.update(_load_json_config(cfg_path))
 
     cli_map = {
         "retriever_type": args.retriever_type,

@@ -1,0 +1,10 @@
+{
+  "_comment": "Phase 2 sweep — top_k=3 (smaller context).",
+  "llm_model": "pytorch-rag",
+  "retriever_type": "rerank",
+  "top_k": 3,
+  "fetch_k": 20,
+  "wandb_run_name": "lora-rerank-k3",
+  "wandb_tags": ["phase:2", "sweep:topk", "rerank", "lora"],
+  "description": "Phase 2: top_k sweep, k=3"
+}

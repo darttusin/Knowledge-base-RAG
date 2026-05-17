@@ -1,0 +1,13 @@
+{
+  "_comment": "Phase 1.4 — switch generator to LoRA-finetuned model with best retriever (rerank assumed). If query_transform wins in Phase 1.3, copy this file as lora-qt-k5.json and change retriever_type.",
+  "llm_model": "pytorch-rag",
+  "retriever_type": "rerank",
+  "top_k": 5,
+  "fetch_k": 20,
+  "wandb_run_name": "lora-rerank-k5",
+  "wandb_tags": ["phase:1", "story", "rerank", "lora", "main"],
+  "description": "Phase 1.4 main: LoRA model + rerank retrieval",
+  "metadata": {
+    "lora_adapter": "lora-train/runs/qwen25-coder-7b-lora-r16-v1/final"
+  }
+}

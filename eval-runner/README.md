@@ -4,11 +4,71 @@
 в dataclass `RunConfig`. Любое поле задаётся одним из трёх способов:
 
 1. **CLI-флаг**: `--retriever-type rerank --top-k 5`
-2. **JSON-пресет**: `--config configs/lora_rerank.json` (поля файла совпадают с именами полей `RunConfig`)
+2. **JSON-пресет(ы)**: `--config configs/_base.json --config configs/lora-rerank-k5.json`
+   (поля файла совпадают с именами полей `RunConfig`; ключи, начинающиеся
+   с `_`, считаются комментариями и игнорируются)
 3. **Комбинация**: JSON задаёт базу, CLI перекрывает отдельные поля
+
+**Порядок применения** (last wins): defaults → каждый `--config` файл по очереди → CLI-флаги.
 
 `asdict(RunConfig)` целиком уходит в `wandb.config`, поэтому любое сравнение
 runs в wandb знает, чем они отличаются.
+
+## Готовые пресеты — папка [`configs/`](configs/)
+
+12 файлов под рекомендованную матрицу экспериментов. Используются
+послойно: общая база `_base.json` + конкретный delta-файл эксперимента.
+
+| Файл | Phase | Что делает |
+|---|---|---|
+| `_base.json` | — | Общие настройки (chroma path, embed model, eval seed/sample). Loaded first. |
+| `base-vanilla-k5.json` | 1.1 | Baseline: base LLM + vanilla retrieval, k=5 |
+| `base-rerank-k5.json` | 1.2 | Base LLM + cross-encoder rerank |
+| `base-qt-k5.json` | 1.3 | Base LLM + query rewriting + HyDE + rerank |
+| `lora-rerank-k5.json` | 1.4 | **Main**: LoRA-finetuned + rerank (best retriever assumed) |
+| `lora-rerank-k3.json` | 2 | top_k sweep, k=3 |
+| `lora-rerank-k10.json` | 2 | top_k sweep, k=10 |
+| `lora-rerank-k5-fetch10.json` | 2 | fetch_k sweep, 10 candidates |
+| `lora-rerank-k5-fetch50.json` | 2 | fetch_k sweep, 50 candidates |
+| `lora-rerank-k5-temp0.json` | 2 | temperature=0 (deterministic) |
+| `lora-rerank-k5-seed43.json` | 3 | Stability: eval_seed=43 |
+| `lora-rerank-k5-seed44.json` | 3 | Stability: eval_seed=44 |
+
+URLs (`llm_api_url`, `judge_api_url`) намеренно отсутствуют в пресетах —
+задайте их через CLI под текущий vast.ai инстанс:
+
+```bash
+python -m eval_runner \
+    --config configs/_base.json \
+    --config configs/lora-rerank-k5.json \
+    --llm-api-url http://193.222.57.16:44090/v1 \
+    --judge-api-url http://193.222.57.16:44090/v1
+```
+
+Чтобы прогнать всю матрицу из 12 runs последовательно:
+
+```bash
+for c in configs/base-vanilla-k5 \
+         configs/base-rerank-k5 \
+         configs/base-qt-k5 \
+         configs/lora-rerank-k5 \
+         configs/lora-rerank-k3 \
+         configs/lora-rerank-k10 \
+         configs/lora-rerank-k5-fetch10 \
+         configs/lora-rerank-k5-fetch50 \
+         configs/lora-rerank-k5-temp0 \
+         configs/lora-rerank-k5-seed43 \
+         configs/lora-rerank-k5-seed44; do
+    python -m eval_runner \
+        --config configs/_base.json \
+        --config "$c.json" \
+        --llm-api-url http://YOUR_IP:PORT/v1 \
+        --judge-api-url http://YOUR_IP:PORT/v1
+done
+```
+
+RAGAS venv создаётся один раз (первый run ~+3 мин) и переиспользуется
+во всех последующих — общее время матрицы ~3 часа.
 
 ---
 

@@ -1,0 +1,11 @@
+{
+  "_comment": "Phase 3 stability — same as lora-rerank-k5 but eval_seed=44.",
+  "llm_model": "pytorch-rag",
+  "retriever_type": "rerank",
+  "top_k": 5,
+  "fetch_k": 20,
+  "eval_seed": 44,
+  "wandb_run_name": "lora-rerank-k5-seed44",
+  "wandb_tags": ["phase:3", "stability", "rerank", "lora"],
+  "description": "Phase 3: variance estimate, eval_seed=44"
+}

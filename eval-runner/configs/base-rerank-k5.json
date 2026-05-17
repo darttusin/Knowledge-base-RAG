@@ -1,0 +1,10 @@
+{
+  "_comment": "Phase 1.2 — add cross-encoder reranker on top of dense retrieval.",
+  "llm_model": "Qwen/Qwen2.5-Coder-7B-Instruct",
+  "retriever_type": "rerank",
+  "top_k": 5,
+  "fetch_k": 20,
+  "wandb_run_name": "base-rerank-k5",
+  "wandb_tags": ["phase:1", "story", "rerank", "base"],
+  "description": "Phase 1.2: base LLM + dense retrieval + cross-encoder rerank"
+}

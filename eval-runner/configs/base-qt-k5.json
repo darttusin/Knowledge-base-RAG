@@ -1,0 +1,10 @@
+{
+  "_comment": "Phase 1.3 — query rewriting + HyDE + rerank (full query transform stack).",
+  "llm_model": "Qwen/Qwen2.5-Coder-7B-Instruct",
+  "retriever_type": "query_transform",
+  "top_k": 5,
+  "fetch_k": 20,
+  "wandb_run_name": "base-qt-k5",
+  "wandb_tags": ["phase:1", "story", "qt", "base"],
+  "description": "Phase 1.3: base LLM + query rewriting + HyDE + rerank"
+}

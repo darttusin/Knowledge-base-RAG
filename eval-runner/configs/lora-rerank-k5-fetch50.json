@@ -1,0 +1,10 @@
+{
+  "_comment": "Phase 2 sweep — wider rerank pool (fetch_k=50).",
+  "llm_model": "pytorch-rag",
+  "retriever_type": "rerank",
+  "top_k": 5,
+  "fetch_k": 50,
+  "wandb_run_name": "lora-rerank-k5-fetch50",
+  "wandb_tags": ["phase:2", "sweep:fetchk", "rerank", "lora"],
+  "description": "Phase 2: fetch_k sweep, 50 candidates before rerank"
+}

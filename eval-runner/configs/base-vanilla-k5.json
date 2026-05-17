@@ -1,0 +1,9 @@
+{
+  "_comment": "Phase 1.1 — minimal baseline: base LLM + vanilla dense retrieval, k=5.",
+  "llm_model": "Qwen/Qwen2.5-Coder-7B-Instruct",
+  "retriever_type": "vanilla",
+  "top_k": 5,
+  "wandb_run_name": "base-vanilla-k5",
+  "wandb_tags": ["phase:1", "story", "vanilla", "base"],
+  "description": "Phase 1.1 baseline: base LLM + vanilla dense retrieval"
+}

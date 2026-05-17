@@ -161,13 +161,45 @@ _RAGAS_VENV_DEPS = [
 ]
 
 
-def _setup_ragas_venv(venv_path: str) -> str:
+def _venv_has_required_deps(python_exec: str) -> bool:
+    """Quick smoke test that the venv's interpreter can import the ragas stack."""
+    try:
+        result = subprocess.run(  # noqa: S603
+            [
+                python_exec,
+                "-c",
+                "import ragas, langchain_openai, langchain_huggingface, "
+                "sentence_transformers, datasets",
+            ],
+            capture_output=True,
+            timeout=20,
+            check=False,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        logger.warning("Could not verify venv at %s: %s", python_exec, exc)
+        return False
+
+
+def _setup_ragas_venv(venv_path: str, force_rebuild: bool = False) -> str:
+    """Ensure an isolated venv with the ragas stack exists at `venv_path`.
+
+    Reuses an existing venv if it has the required deps — this saves ~3
+    min per call across an experiment matrix. Pass `force_rebuild=True`
+    to wipe and recreate (useful after dep drift).
+    """
     python_exec = f"{venv_path}/bin/python"
+
+    if not force_rebuild and os.path.exists(python_exec) and _venv_has_required_deps(python_exec):
+        logger.info("Reusing existing ragas venv at %s", venv_path)
+        return python_exec
+
     clean_env = os.environ.copy()
     clean_env.pop("PYTHONPATH", None)
     clean_env.pop("PYTHONHOME", None)
 
     if os.path.exists(venv_path):
+        logger.info("Wiping stale ragas venv at %s", venv_path)
         shutil.rmtree(venv_path)
 
     logger.info("Creating isolated ragas venv at %s", venv_path)

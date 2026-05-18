@@ -108,15 +108,19 @@ def fetch_runs(
             continue
         if exclude_name_prefix and r.name.startswith(exclude_name_prefix):
             continue
+        # api.runs() returns "stub" objects whose .config is empty —
+        # re-fetch the full run by id to hydrate the config. Adds one
+        # extra round trip per run but matrix sizes are tiny (<100).
+        full = api.run(f"{path}/{r.id}")
         records.append(
             RunRecord(
-                name=r.name,
-                id=r.id,
-                url=r.url,
-                state=str(getattr(r, "state", "unknown")),
-                tags=list(r.tags or []),
-                config=_coerce_config(r.config),
-                summary=dict(r.summary or {}),
+                name=full.name,
+                id=full.id,
+                url=full.url,
+                state=str(getattr(full, "state", "unknown")),
+                tags=list(full.tags or []),
+                config=_coerce_config(full.config),
+                summary=dict(full.summary or {}),
             )
         )
     return records

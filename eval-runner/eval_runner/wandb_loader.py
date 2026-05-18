@@ -56,6 +56,28 @@ class RunRecord:
         return row
 
 
+def _coerce_config(raw: Any) -> dict[str, Any]:
+    """Normalize wandb's run.config to a flat {key: value} dict.
+
+    The public API often returns each entry wrapped as
+    ``{"value": <actual>, "desc": null}`` plus a ``_wandb`` metadata key.
+    Both quirks are handled here so downstream code can just do
+    ``record.config["top_k"]``.
+    """
+    if raw is None:
+        return {}
+    items = list(raw.items()) if hasattr(raw, "items") else []
+    out: dict[str, Any] = {}
+    for k, v in items:
+        if k == "_wandb":
+            continue
+        if isinstance(v, dict) and "value" in v:
+            out[k] = v.get("value")
+        else:
+            out[k] = v
+    return out
+
+
 def fetch_runs(
     project: str,
     entity: str | None = None,
@@ -93,7 +115,7 @@ def fetch_runs(
                 url=r.url,
                 state=str(getattr(r, "state", "unknown")),
                 tags=list(r.tags or []),
-                config=dict(r.config or {}),
+                config=_coerce_config(r.config),
                 summary=dict(r.summary or {}),
             )
         )

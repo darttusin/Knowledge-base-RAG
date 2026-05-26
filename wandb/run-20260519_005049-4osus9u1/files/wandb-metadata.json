@@ -1,0 +1,37 @@
+{
+  "os": "macOS-26.4.1-arm64-arm-64bit-Mach-O",
+  "python": "CPython 3.13.11",
+  "startedAt": "2026-05-18T21:50:49.233590Z",
+  "args": [
+    "--config",
+    "eval-runner/configs/_base.json",
+    "--config",
+    "eval-runner/configs/lora-rerank-k5-seed44.json",
+    "--llm-api-url",
+    "http://localhost:18000/v1",
+    "--judge-api-url",
+    "http://localhost:18000/v1"
+  ],
+  "program": "-m eval_runner.__main__",
+  "git": {
+    "remote": "git@github.com:darttusin/Knowledge-base-RAG.git",
+    "commit": "ec48c4cfa2a9abeac558b0065c96e087fea0ea52"
+  },
+  "email": "dima.rolick22@gmail.com",
+  "root": "/Users/yuga/Projects/Python/HSE-RAG",
+  "host": "Dmitrijs-Mac-mini.local",
+  "executable": "/Users/yuga/Projects/Python/HSE-RAG/.venv/bin/python",
+  "cpu_count": 10,
+  "cpu_count_logical": 10,
+  "disk": {
+    "/": {
+      "total": "494384795648",
+      "used": "233562296320"
+    }
+  },
+  "memory": {
+    "total": "17179869184"
+  },
+  "apple": {},
+  "writerId": "mo8rwi38fyeon0k27jhcb17x7unu0f06"
+}

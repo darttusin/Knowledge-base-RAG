@@ -1,0 +1,24 @@
+2026-05-18 22:00:42,901 INFO    MainThread:74153 [wandb_setup.py:_flush():81] Current SDK version is 0.25.1
+2026-05-18 22:00:42,901 INFO    MainThread:74153 [wandb_setup.py:_flush():81] Configure stats pid to 74153
+2026-05-18 22:00:42,902 INFO    MainThread:74153 [wandb_setup.py:_flush():81] Loading settings from environment variables
+2026-05-18 22:00:42,902 INFO    MainThread:74153 [wandb_init.py:setup_run_log_directory():717] Logging user logs to /Users/yuga/Projects/Python/HSE-RAG/wandb/run-20260518_220042-zvug1skl/logs/debug.log
+2026-05-18 22:00:42,902 INFO    MainThread:74153 [wandb_init.py:setup_run_log_directory():718] Logging internal logs to /Users/yuga/Projects/Python/HSE-RAG/wandb/run-20260518_220042-zvug1skl/logs/debug-internal.log
+2026-05-18 22:00:42,902 INFO    MainThread:74153 [wandb_init.py:init():844] calling init triggers
+2026-05-18 22:00:42,902 INFO    MainThread:74153 [wandb_init.py:init():849] wandb.init called with sweep_config: {}
+config: {'retriever_type': 'rerank', 'top_k': 5, 'fetch_k': 20, 'embedding_model': 'BAAI/bge-base-en-v1.5', 'rerank_model': 'BAAI/bge-reranker-base', 'chroma_path': 'data/chromadb', 'chroma_collection': 'docs_fast', 'device': 'auto', 'llm_model': 'Qwen/Qwen2.5-Coder-7B-Instruct', 'llm_api_url': 'http://localhost:18000/v1', 'llm_api_key': 'EMPTY', 'llm_temperature': 0.1, 'llm_max_tokens': 1024, 'llm_timeout': 60.0, 'judge_model': 'Qwen/Qwen2.5-Coder-7B-Instruct', 'judge_api_url': 'http://localhost:18000/v1', 'judge_api_key': 'EMPTY', 'eval_csv_path': 'data/stackoverflow-pytorch.csv', 'eval_sample_size': 100, 'eval_min_answer_score': 1, 'eval_seed': 42, 'eval_embedding_model': 'Snowflake/snowflake-arctic-embed-m', 'compute_lexical': True, 'compute_semantic': True, 'compute_ragas': True, 'rag_score_w_faithfulness': 0.4, 'rag_score_w_answer_relevancy': 0.4, 'rag_score_w_context_recall': 0.2, 'wandb_project': 'pytorch-rag-eval', 'wandb_run_name': 'base-rerank-k5', 'wandb_tags': ['phase:1', 'story', 'rerank', 'base'], 'wandb_notes': '', 'description': 'Phase 1.2: base LLM + dense retrieval + cross-encoder rerank', 'metadata': {}, '_wandb': {}}
+2026-05-18 22:00:42,902 INFO    MainThread:74153 [wandb_init.py:init():892] starting backend
+2026-05-18 22:00:43,182 INFO    MainThread:74153 [wandb_init.py:init():895] sending inform_init request
+2026-05-18 22:00:43,212 INFO    MainThread:74153 [wandb_init.py:init():903] backend started and connected
+2026-05-18 22:00:43,214 INFO    MainThread:74153 [wandb_init.py:init():973] updated telemetry
+2026-05-18 22:00:43,237 INFO    MainThread:74153 [wandb_init.py:init():997] communicating run to backend with 90.0 second timeout
+2026-05-18 22:00:44,356 INFO    MainThread:74153 [wandb_init.py:init():1042] starting run threads in backend
+2026-05-18 22:00:44,452 INFO    MainThread:74153 [wandb_run.py:_console_start():2524] atexit reg
+2026-05-18 22:00:44,453 INFO    MainThread:74153 [wandb_run.py:_redirect():2373] redirect: wrap_raw
+2026-05-18 22:00:44,453 INFO    MainThread:74153 [wandb_run.py:_redirect():2442] Wrapping output streams.
+2026-05-18 22:00:44,453 INFO    MainThread:74153 [wandb_run.py:_redirect():2465] Redirects installed.
+2026-05-18 22:00:44,455 INFO    MainThread:74153 [wandb_init.py:init():1082] run started, returning control to user process
+2026-05-18 22:00:47,320 INFO    MainThread:74153 [wandb_run.py:_finish():2291] finishing run ooovotetoda/pytorch-rag-eval/zvug1skl
+2026-05-18 22:00:47,320 INFO    MainThread:74153 [wandb_run.py:_atexit_cleanup():2490] got exitcode: 0
+2026-05-18 22:00:47,320 INFO    MainThread:74153 [wandb_run.py:_restore():2472] restore
+2026-05-18 22:00:47,320 INFO    MainThread:74153 [wandb_run.py:_restore():2478] restore done
+2026-05-18 22:00:51,956 INFO    MainThread:74153 [wandb_run.py:_footer_sync_info():3868] logging synced files

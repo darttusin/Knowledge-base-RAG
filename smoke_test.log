@@ -1,0 +1,125 @@
+Endpoint: http://localhost:18000/v1
+Base model: Qwen/Qwen2.5-Coder-7B-Instruct
+LoRA model: pytorch-rag
+Models served: ['Qwen/Qwen2.5-Coder-7B-Instruct', 'pytorch-rag']
+
+==========================================================================================
+TEST 1. RELEVANT context — both should answer correctly
+==========================================================================================
+Q: How can I check if CUDA is available before moving my tensor to GPU?
+
+--- BASE: Qwen/Qwen2.5-Coder-7B-Instruct ---
+To check if CUDA is available before moving your tensor to the GPU, you can use the `torch.cuda.is_available()` function. This function returns a boolean value indicating whether CUDA is available on your system. Here's how you can implement this:
+
+```python
+import torch
+
+# Check if CUDA is available
+if torch.cuda.is_available():
+    # Move tensor to GPU
+    device = torch.device('cuda')
+else:
+    # Use CPU as fallback
+    device = torch.device('cpu')
+
+# Example tensor
+tensor = torch.tensor([1.0, 2.0, 3.0])
+
+# Move tensor to the appropriate device
+tensor = tensor.to(device)
+```
+
+This code snippet first checks if CUDA is available. If it is, it sets the device to 'cuda', which refers to the GPU. If CUDA is not available, it defaults to 'cpu'. The tensor is then moved to the selected device.
+
+--- LORA: pytorch-rag ---
+I found this solution:
+
+```
+import torch
+
+if torch.cuda.is_available():
+  # do something
+```
+
+==========================================================================================
+TEST 2. IRRELEVANT context — LoRA should refuse, base will hallucinate
+==========================================================================================
+Q: How do I save and load a PyTorch model checkpoint to disk?
+
+--- BASE: Qwen/Qwen2.5-Coder-7B-Instruct ---
+To save and load a PyTorch model checkpoint to disk, you can use the following methods:
+
+### Saving a Model Checkpoint
+
+```python
+# Assuming 'model' is your PyTorch model
+torch.save(model.state_dict(), 'path_to_save_model.pth')
+```
+
+This will save only the model's state dictionary (i.e., the learned parameters).
+
+### Loading a Model Checkpoint
+
+```python
+# Assuming 'model' is your PyTorch model
+model.load_state_dict(torch.load('path_to_save_model.pth'))
+model.eval()  # Set the model to evaluation mode
+```
+
+This will load the saved state dictionary into your model. It's important to call `model.eval()` after loading the weights if you intend to use the model for inference, as this sets the dropout layers and batch normalization layers to their evaluation modes.
+
+These functions allow you to save and restore the state of your model, which is useful for training and deploying models.
+
+--- LORA: pytorch-rag ---
+The following example shows how to save/load a model checkpoint to/from disk.
+
+```
+import torch
+
+# Define some random data
+data = torch.randn(10, 3, requires_grad=True)
+target = torch.tensor([0])
+
+# Define a simple model
+model = torch.nn.Linear(3, 2)
+
+# Define a loss function
+loss_fn = torch.nn.MSELoss()
+
+# Compute the output
+output = model(data)
+
+# Compute the loss
+loss = loss_fn(output, target.view(1, -1))
+
+# Backpropagate the error
+loss.backward()
+
+# Save the model checkpoint
+torch.save(model.state_dict(), "checkpoint.pth")
+
+# Load the model checkpoint
+model.load_state_dict(torch.load("checkpoint.pth"))
+```
+
+==========================================================================================
+TEST 3. NO context — both fall back on parametric knowledge
+==========================================================================================
+Q: What is the difference between torch.no_grad() and torch.inference_mode()?
+
+--- BASE: Qwen/Qwen2.5-Coder-7B-Instruct ---
+The context provided does not include any information about `torch.no_grad()` or `torch.inference_mode()`. Therefore, I cannot provide a reliable answer to your question based on the given information.
+
+--- LORA: pytorch-rag ---
+The documentation for [`torch.no_grad()`](https://pytorch.org/docs/stable/generated/torch.no_grad.html) says:
+
+> Disables gradient calculation.
+>
+> It will return a no-grad context manager which disables gradient calculation.
+
+And for [`torch.inference_mode()`](https://pytorch.org/docs/stable/generated/torch.inference_mode.html):
+
+> Enables or disables inference mode (also see [Locally disabling inference mode](https://pytorch.org/docs/stable/notes/cuda.html#inference-mode)).
+
+So both disable gradients but `no_grad` also disables autograd while `inference_mode` only disables autograd if CUDA is available.
+

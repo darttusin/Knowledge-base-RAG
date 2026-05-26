@@ -1,0 +1,144 @@
+_wandb:
+    value:
+        cli_version: 0.25.1
+        e:
+            nsiit4dkgvh892bz1euc1brdeed6795n:
+                apple: {}
+                args:
+                    - --config
+                    - eval-runner/configs/_base.json
+                    - --config
+                    - eval-runner/configs/lora-rerank-k5.json
+                    - --llm-api-url
+                    - http://localhost:18000/v1
+                    - --judge-api-url
+                    - http://localhost:18000/v1
+                    - --eval-sample-size
+                    - "10"
+                    - --wandb-run-name
+                    - _sanity-check-2
+                    - --wandb-tag
+                    - sanity
+                cpu_count: 10
+                cpu_count_logical: 10
+                disk:
+                    /:
+                        total: "494384795648"
+                        used: "234166263808"
+                email: dima.rolick22@gmail.com
+                executable: /Users/yuga/Projects/Python/HSE-RAG/.venv/bin/python
+                git:
+                    commit: ec48c4cfa2a9abeac558b0065c96e087fea0ea52
+                    remote: git@github.com:darttusin/Knowledge-base-RAG.git
+                host: Dmitrijs-Mac-mini.local
+                memory:
+                    total: "17179869184"
+                os: macOS-26.4.1-arm64-arm-64bit-Mach-O
+                program: -m eval_runner.__main__
+                python: CPython 3.13.11
+                root: /Users/yuga/Projects/Python/HSE-RAG
+                startedAt: "2026-05-18T17:54:39.051046Z"
+                writerId: nsiit4dkgvh892bz1euc1brdeed6795n
+        m: []
+        python_version: 3.13.11
+        t:
+            "1":
+                - 1
+                - 5
+                - 11
+                - 49
+                - 53
+                - 75
+                - 92
+                - 95
+                - 105
+            "2":
+                - 1
+                - 5
+                - 11
+                - 49
+                - 53
+                - 75
+                - 92
+                - 95
+                - 105
+            "3":
+                - 2
+                - 13
+                - 15
+                - 16
+            "4": 3.13.11
+            "5": 0.25.1
+            "6": 4.57.3
+            "12": 0.25.1
+            "13": darwin-arm64
+chroma_collection:
+    value: docs_fast
+chroma_path:
+    value: data/chromadb
+compute_lexical:
+    value: true
+compute_ragas:
+    value: true
+compute_semantic:
+    value: true
+description:
+    value: 'Phase 1.4 main: LoRA model + rerank retrieval'
+device:
+    value: auto
+embedding_model:
+    value: BAAI/bge-base-en-v1.5
+eval_csv_path:
+    value: data/stackoverflow-pytorch.csv
+eval_embedding_model:
+    value: Snowflake/snowflake-arctic-embed-m
+eval_min_answer_score:
+    value: 1
+eval_sample_size:
+    value: 10
+eval_seed:
+    value: 42
+fetch_k:
+    value: 20
+judge_api_key:
+    value: EMPTY
+judge_api_url:
+    value: http://localhost:18000/v1
+judge_model:
+    value: Qwen/Qwen2.5-Coder-7B-Instruct
+llm_api_key:
+    value: EMPTY
+llm_api_url:
+    value: http://localhost:18000/v1
+llm_max_tokens:
+    value: 1024
+llm_model:
+    value: pytorch-rag
+llm_temperature:
+    value: 0.1
+llm_timeout:
+    value: 60
+metadata:
+    value:
+        lora_adapter: lora-train/runs/qwen25-coder-7b-lora-r16-v1/final
+rag_score_w_answer_relevancy:
+    value: 0.4
+rag_score_w_context_recall:
+    value: 0.2
+rag_score_w_faithfulness:
+    value: 0.4
+rerank_model:
+    value: BAAI/bge-reranker-base
+retriever_type:
+    value: rerank
+top_k:
+    value: 5
+wandb_notes:
+    value: ""
+wandb_project:
+    value: pytorch-rag-eval
+wandb_run_name:
+    value: _sanity-check-2
+wandb_tags:
+    value:
+        - sanity

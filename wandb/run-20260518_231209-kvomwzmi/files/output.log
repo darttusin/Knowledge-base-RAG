@@ -1,0 +1,5 @@
+wandb: Detected [openai] in use.
+wandb: Use W&B Weave for improved LLM call tracing. Install Weave with `pip install weave` then add `import weave` to the top of your script.
+wandb: For more information, check out the docs at: https://weave-docs.wandb.ai/
+2026-05-18 23:12:10.882 | INFO     | eval_runner.tracking:log_to_wandb:53 - wandb run started: https://wandb.ai/ooovotetoda/pytorch-rag-eval/runs/kvomwzmi
+2026-05-18 23:12:13.539 | INFO     | eval_runner.tracking:log_to_wandb:69 - logged 86 low-faithfulness rows

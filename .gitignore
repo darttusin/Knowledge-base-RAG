@@ -7,3 +7,7 @@ __pycache__
 node_modules
 mutagen.yml
 mutagen.yml.lock
+lora-train/runs/
+ragas_venv/
+eval-runner/logs/
+wandb/

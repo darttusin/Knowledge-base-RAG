@@ -1,0 +1,11 @@
+{
+  "_comment": "v2 (synth dataset) LoRA + cross-encoder rerank, k=5. Main v2 candidate.",
+  "llm_model": "synth-v2",
+  "retriever_type": "rerank",
+  "top_k": 5,
+  "fetch_k": 20,
+  "wandb_run_name": "v2-rerank-k5",
+  "wandb_tags": ["v2", "synth", "rerank", "lora", "main"],
+  "description": "v2 synth-LoRA + rerank retrieval",
+  "metadata": {"lora_adapter": "akeakeaki/pytorch-rag-lora-synth-v2"}
+}

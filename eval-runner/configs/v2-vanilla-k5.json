@@ -1,0 +1,10 @@
+{
+  "_comment": "v2 (synth dataset) LoRA + vanilla dense retrieval, k=5. llm_model is the vLLM --lora-modules alias for the synth-v2 adapter served from HF.",
+  "llm_model": "synth-v2",
+  "retriever_type": "vanilla",
+  "top_k": 5,
+  "wandb_run_name": "v2-vanilla-k5",
+  "wandb_tags": ["v2", "synth", "vanilla", "lora"],
+  "description": "v2 synth-LoRA + vanilla retrieval",
+  "metadata": {"lora_adapter": "akeakeaki/pytorch-rag-lora-synth-v2"}
+}

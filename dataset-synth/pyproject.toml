@@ -1,0 +1,21 @@
+[project]
+name = "dataset-synth"
+version = "0.1.0"
+requires-python = ">=3.12"
+# Generates grounded synthetic Q&A from the ChromaDB documentation
+# chunks via a teacher LLM. Teacher-agnostic: any OpenAI-compatible
+# endpoint works (OpenAI cloud OR a vLLM server on vast.ai) — only the
+# --teacher-api-url differs at run time.
+dependencies = [
+    "chromadb>=1.3.0",
+    "openai>=1.0.0",
+    "loguru>=0.7.3",
+    "tqdm>=4.66.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dataset_synth"]

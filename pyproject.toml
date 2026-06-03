@@ -15,6 +15,7 @@ members = [
     "dataset-prep",
     "lora-train",
     "eval-runner",
+    "dataset-synth",
 ]
 
 [tool.uv.sources]
@@ -24,6 +25,7 @@ outlier-detection = { workspace = true }
 dataset-prep = { workspace = true }
 lora-train = { workspace = true }
 eval-runner = { workspace = true }
+dataset-synth = { workspace = true }
 
 [tool.ruff.lint]
 select = ["F", "E", "W", "C90", "I", "S", "BLE", "T20", "ARG", "ERA", "PLR0913"]

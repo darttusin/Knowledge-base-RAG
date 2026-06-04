@@ -64,9 +64,17 @@ class RunConfig:
     compute_semantic: bool = True  # answer↔answer cosine sim
     compute_ragas: bool = True  # faithfulness, answer_relevancy, context_recall
 
-    # === Composite RAG score weights (from BaseLine notebook) ===
-    rag_score_w_faithfulness: float = 0.4
-    rag_score_w_answer_relevancy: float = 0.4
+    # === Composite RAG score weights ===
+    # Faithfulness-priority: for a RAG assistant over a private knowledge
+    # base, a confidently-wrong (hallucinated) API answer is worse than a
+    # slightly-less-relevant but grounded one — groundedness is the whole
+    # point of RAG. Hence faithfulness gets the dominant weight. The
+    # original BaseLine notebook used 0.4/0.4/0.2; we shifted to faith
+    # priority after the v2 evaluation showed a faithfulness↔relevancy
+    # trade-off. Always report a weight-sensitivity analysis alongside the
+    # headline number (see scripts/recompute_score.py).
+    rag_score_w_faithfulness: float = 0.6
+    rag_score_w_answer_relevancy: float = 0.2
     rag_score_w_context_recall: float = 0.2
 
     # === Tracking ===

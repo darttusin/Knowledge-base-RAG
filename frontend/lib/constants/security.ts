@@ -111,12 +111,3 @@ export const DANGEROUS_JS_PATTERNS = [
   /\bsessionStorage\b/,
   /\bcookie\b/,
 ]
-
-// Packages that require server-side execution (not available in Pyodide)
-export const SERVER_ONLY_PACKAGES = [
-  "torch",
-  "tensorflow",
-  "keras",
-  "transformers",
-  "diffusers",
-] as const

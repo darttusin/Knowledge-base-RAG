@@ -33,7 +33,7 @@ New configuration options:
 RAG_ENABLED=true                          # Enable/disable local RAG
 RAG_EMBEDDING_MODEL=BAAI/bge-base-en-v1.5 # Embedding model
 RAG_RERANK_MODEL=BAAI/bge-reranker-base   # Reranker model
-RAG_LLM_MODEL=TechxGenus/c4ai-command-r-v01-AWQ  # Generation model
+RAG_LLM_MODEL=Qwen/Qwen2.5-Coder-7B-Instruct  # Generation model
 RAG_LLM_API_URL=http://localhost:8003/v1  # LLM API endpoint
 RAG_LLM_API_KEY=                          # LLM API key (if needed)
 RAG_TOP_K=5                               # Number of retrieved chunks
@@ -149,7 +149,7 @@ You need a running LLM API endpoint compatible with OpenAI API format:
 
 **Option A: Use vLLM**
 ```bash
-vllm serve TechxGenus/c4ai-command-r-v01-AWQ \
+vllm serve Qwen/Qwen2.5-Coder-7B-Instruct \
   --port 8003 \
   --max-model-len 4096
 ```
@@ -178,7 +178,7 @@ On startup, you should see:
 Starting Knowledge Base RAG Backend...
 ✓ Database initialized
 Loading RAG models...
-✓ Loaded chat model: TechxGenus/c4ai-command-r-v01-AWQ
+✓ Loaded chat model: Qwen/Qwen2.5-Coder-7B-Instruct
 ✓ Loaded embedding model: BAAI/bge-base-en-v1.5
 ✓ Loaded reranker: BAAI/bge-reranker-base
 ✓ Loaded ChromaDB collection: docs_fast

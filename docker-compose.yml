@@ -36,6 +36,7 @@ services:
       - RAG_ENABLED=${RAG_ENABLED:-true}
       - RAG_LLM_API_URL=${RAG_LLM_API_URL:-}
       - RAG_LLM_API_KEY=${RAG_LLM_API_KEY:-}
+      - HF_TOKEN=${HF_TOKEN:-}
     ports:
       - "8001:8001"
     depends_on:
@@ -71,11 +72,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 512M
+          cpus: "2.0"
+          memory: 1G
         reservations:
-          cpus: "0.1"
-          memory: 128M
+          cpus: "0.25"
+          memory: 256M
       restart_policy:
         condition: on-failure
         max_attempts: 3

@@ -144,7 +144,7 @@ def validate_code_ast(code: str) -> list[str]:
         return [f"SyntaxError: {str(e)}"]
 
 
-def create_safe_namespace() -> dict[str, Any]:
+def create_safe_namespace(code: str = "") -> dict[str, Any]:
     namespace = {
         "int": int,
         "float": float,
@@ -223,24 +223,29 @@ def create_safe_namespace() -> dict[str, Any]:
     except ImportError:
         pass
 
-    try:
-        numpy = builtin_import("numpy")
-        namespace["numpy"] = numpy
-        namespace["np"] = numpy
-    except ImportError:
-        pass
+    # Тяжёлые научные библиотеки импортируем только если код их упоминает —
+    # иначе каждый запуск (в т.ч. простой print) платил бы ~4.5с за импорт torch.
+    if "numpy" in code or "np" in code:
+        try:
+            numpy = builtin_import("numpy")
+            namespace["numpy"] = numpy
+            namespace["np"] = numpy
+        except ImportError:
+            pass
 
-    try:
-        pandas = builtin_import("pandas")
-        namespace["pandas"] = pandas
-        namespace["pd"] = pandas
-    except ImportError:
-        pass
+    if "pandas" in code or "pd" in code:
+        try:
+            pandas = builtin_import("pandas")
+            namespace["pandas"] = pandas
+            namespace["pd"] = pandas
+        except ImportError:
+            pass
 
-    try:
-        namespace["torch"] = builtin_import("torch")
-    except ImportError:
-        pass
+    if "torch" in code:
+        try:
+            namespace["torch"] = builtin_import("torch")
+        except ImportError:
+            pass
 
     namespace["__import__"] = safe_import
 
@@ -322,7 +327,7 @@ def execute_code_restricted(code: str) -> CodeResponse:
 
         byte_code = compile_restricted(code, filename="<user_code>", mode="exec")
 
-        namespace = create_safe_namespace()
+        namespace = create_safe_namespace(code)
 
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
             exec(byte_code, namespace)

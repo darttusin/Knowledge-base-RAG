@@ -1,16 +1,21 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Check, Copy, Play, Loader2, XCircle, CheckCircle2, Square } from "lucide-react"
-import { cn } from "@/lib/utils"
 import {
-  executeCode,
-  isExecutableLanguage,
-  onPyodideLoading,
-  isPyodideLoading,
-} from "@/lib/code-executor"
+  Check,
+  Copy,
+  Play,
+  Loader2,
+  XCircle,
+  CheckCircle2,
+  Square,
+  Pencil,
+  X,
+} from "lucide-react"
+import { cn } from "@/lib/utils"
+import { executeCode, isExecutableLanguage } from "@/lib/code-executor"
 import { tokenize, TOKEN_COLORS, PLOT_DATA_REGEX } from "@/lib/syntax-highlighting"
 import { useCopyFeedback } from "@/hooks/useCopyFeedback"
 
@@ -19,7 +24,7 @@ interface CodeBlockProps {
   language?: string
 }
 
-type ExecutionStatus = "idle" | "loading-runtime" | "running" | "success" | "error"
+type ExecutionStatus = "idle" | "running" | "success" | "error"
 
 // Highlighted code component using React elements
 function HighlightedCode({ code, language }: { code: string; language: string }) {
@@ -77,25 +82,76 @@ export function CodeBlock({ code, language = "javascript" }: CodeBlockProps) {
   const [executionOutput, setExecutionOutput] = useState<string>("")
   const [abortController, setAbortController] = useState<AbortController | null>(null)
 
-  const canExecute = isExecutableLanguage(language)
-  const isPython = language.toLowerCase() === "python" || language.toLowerCase() === "py"
+  // Editable code state. `currentCode` is what gets copied/run; it starts as the
+  // model's output and follows streaming updates until the user edits it.
+  const [currentCode, setCurrentCode] = useState(code)
+  const [isEditing, setIsEditing] = useState(false)
+  const [draftCode, setDraftCode] = useState(code)
+  const [isEdited, setIsEdited] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Listen for Pyodide loading status
+  // While the message is still streaming, keep syncing with the incoming code —
+  // but stop once the user has made their own edits.
   useEffect(() => {
-    if (!isPython) return
+    if (!isEditing && !isEdited) {
+      setCurrentCode(code)
+      setDraftCode(code)
+    }
+  }, [code, isEditing, isEdited])
 
-    const unsubscribe = onPyodideLoading((status) => {
-      if (status === "loading" && executionStatus === "running") {
-        setExecutionStatus("loading-runtime")
-      } else if (status === "ready" && executionStatus === "loading-runtime") {
-        setExecutionStatus("running")
-      }
-    })
+  const canExecute = isExecutableLanguage(language)
 
-    return unsubscribe
-  }, [isPython, executionStatus])
+  const handleCopy = () => copy(currentCode)
 
-  const handleCopy = () => copy(code)
+  const startEditing = () => {
+    setDraftCode(currentCode)
+    setIsEditing(true)
+  }
+
+  const cancelEditing = () => {
+    setDraftCode(currentCode)
+    setIsEditing(false)
+  }
+
+  const saveEditing = () => {
+    setCurrentCode(draftCode)
+    setIsEdited(draftCode !== code)
+    setIsEditing(false)
+  }
+
+  // Focus the textarea and place the caret at the end when entering edit mode.
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      const el = textareaRef.current
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+    }
+  }, [isEditing])
+
+  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault()
+      cancelEditing()
+      return
+    }
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      saveEditing()
+      return
+    }
+    // Insert 4 spaces on Tab instead of leaving the field.
+    if (e.key === "Tab") {
+      e.preventDefault()
+      const el = e.currentTarget
+      const start = el.selectionStart
+      const end = el.selectionEnd
+      const next = draftCode.slice(0, start) + "    " + draftCode.slice(end)
+      setDraftCode(next)
+      requestAnimationFrame(() => {
+        el.selectionStart = el.selectionEnd = start + 4
+      })
+    }
+  }
 
   const handleStop = () => {
     if (abortController) {
@@ -113,20 +169,14 @@ export function CodeBlock({ code, language = "javascript" }: CodeBlockProps) {
       return
     }
 
-    // Check if Pyodide is loading for Python
-    if (isPython && isPyodideLoading()) {
-      setExecutionStatus("loading-runtime")
-      setExecutionOutput("")
-    } else {
-      setExecutionStatus("running")
-      setExecutionOutput("")
-    }
+    setExecutionStatus("running")
+    setExecutionOutput("")
 
     const controller = new AbortController()
     setAbortController(controller)
 
     try {
-      const result = await executeCode(code, language)
+      const result = await executeCode(currentCode, language)
 
       // Check if aborted
       if (controller.signal.aborted) return
@@ -147,32 +197,91 @@ export function CodeBlock({ code, language = "javascript" }: CodeBlockProps) {
     <div className="border-border/50 my-4 overflow-hidden rounded-xl border bg-neutral-900 dark:bg-neutral-950">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-neutral-700/50 bg-neutral-800 px-4 py-2 dark:bg-neutral-900">
-        <span className="text-xs font-medium tracking-wide text-neutral-400">{language}</span>
+        <span className="flex items-center gap-2 text-xs font-medium tracking-wide text-neutral-400">
+          {language}
+          {isEdited && !isEditing && (
+            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
+              edited
+            </span>
+          )}
+        </span>
         <div className="flex items-center gap-0.5">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-neutral-400 hover:bg-neutral-700/50 hover:text-neutral-200"
-                  onClick={handleCopy}
-                >
-                  {copied ? (
-                    <Check className="h-3.5 w-3.5 text-emerald-400" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{copied ? "Copied!" : "Copy code"}</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          {canExecute && (
+          {isEditing ? (
+            <>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-emerald-400 hover:bg-neutral-700/50 hover:text-emerald-300"
+                      onClick={saveEditing}
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Save changes (⌘/Ctrl+Enter)</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-neutral-400 hover:bg-neutral-700/50 hover:text-neutral-200"
+                      onClick={cancelEditing}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Cancel (Esc)</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </>
+          ) : (
+            <>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-neutral-400 hover:bg-neutral-700/50 hover:text-neutral-200"
+                      onClick={startEditing}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Edit code</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-neutral-400 hover:bg-neutral-700/50 hover:text-neutral-200"
+                      onClick={handleCopy}
+                    >
+                      {copied ? (
+                        <Check className="h-3.5 w-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{copied ? "Copied!" : "Copy code"}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </>
+          )}
+          {canExecute && !isEditing && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  {executionStatus === "running" || executionStatus === "loading-runtime" ? (
+                  {executionStatus === "running" ? (
                     <Button
                       variant="ghost"
                       size="icon"
@@ -199,9 +308,7 @@ export function CodeBlock({ code, language = "javascript" }: CodeBlockProps) {
                   )}
                 </TooltipTrigger>
                 <TooltipContent>
-                  {executionStatus === "running" || executionStatus === "loading-runtime"
-                    ? "Stop"
-                    : "Run code"}
+                  {executionStatus === "running" ? "Stop" : "Run code"}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -210,11 +317,23 @@ export function CodeBlock({ code, language = "javascript" }: CodeBlockProps) {
       </div>
 
       {/* Code */}
-      <div className="overflow-x-auto">
-        <pre className="min-w-fit p-4">
-          <HighlightedCode code={code} language={language} />
-        </pre>
-      </div>
+      {isEditing ? (
+        <textarea
+          ref={textareaRef}
+          value={draftCode}
+          onChange={(e) => setDraftCode(e.target.value)}
+          onKeyDown={handleEditorKeyDown}
+          spellCheck={false}
+          rows={Math.min(Math.max(draftCode.split("\n").length, 3), 30)}
+          className="w-full resize-y border-0 bg-neutral-900 p-4 font-mono text-sm text-neutral-100 outline-none focus:ring-1 focus:ring-blue-500/40 dark:bg-neutral-950"
+        />
+      ) : (
+        <div className="overflow-x-auto">
+          <pre className="min-w-fit p-4">
+            <HighlightedCode code={currentCode} language={language} />
+          </pre>
+        </div>
+      )}
 
       {/* Execution Result */}
       {executionStatus !== "idle" && (
@@ -223,23 +342,9 @@ export function CodeBlock({ code, language = "javascript" }: CodeBlockProps) {
             "flex items-start gap-2 border-t border-neutral-700/50 px-4 py-3",
             executionStatus === "success" && "bg-emerald-500/10",
             executionStatus === "error" && "bg-red-500/10",
-            (executionStatus === "running" || executionStatus === "loading-runtime") &&
-              "bg-blue-500/10"
+            executionStatus === "running" && "bg-blue-500/10"
           )}
         >
-          {executionStatus === "loading-runtime" && (
-            <>
-              <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-blue-400" />
-              <div className="flex-1">
-                <span className="text-sm text-blue-400">Loading runtime...</span>
-                <span className="mt-0.5 block text-xs text-neutral-500">
-                  {language.toLowerCase().includes("python")
-                    ? "First run loads Pyodide + packages (numpy, pandas, etc.)"
-                    : "Loading WebGPU/ML runtime (ONNX, Transformers.js)"}
-                </span>
-              </div>
-            </>
-          )}
           {executionStatus === "running" && (
             <>
               <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-blue-400" />

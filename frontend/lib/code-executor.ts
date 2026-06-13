@@ -1,14 +1,14 @@
-// Code execution utilities for Python (Pyodide), JavaScript (sandboxed iframe), and WebGPU
+// Code execution utilities.
+// Python всегда исполняется на бэкенде (изолированная песочница code-executor).
+// JavaScript исполняется в sandbox-iframe, ML/WebGPU — через webgpu-executor.
 
 import { executeONNXCode, executeTransformersCode, checkWebGPUSupport } from "./webgpu-executor"
 import { logger } from "./logger"
+import { api, ApiRequestError } from "./api/client"
 import {
-  PYODIDE_INDEX_URL,
-  PYODIDE_PACKAGE_MAP,
   JS_LIBRARY_CDN,
   PYTHON_EXECUTION_TIMEOUT,
   JS_EXECUTION_TIMEOUT,
-  SERVER_ONLY_PACKAGES,
   type CDNResource,
 } from "./constants"
 
@@ -17,39 +17,13 @@ export interface ExecutionResult {
   status: "success" | "error"
 }
 
-// Pyodide types
-interface PyodideInterface {
-  runPythonAsync(code: string): Promise<unknown>
-  runPython(code: string): unknown
-  loadPackage(packages: string | string[]): Promise<void>
-  pyimport(name: string): { install(pkg: string): Promise<void> }
-  globals: Map<string, unknown>
-}
-
-interface PyodideLoadOptions {
-  indexURL: string
-}
-
-declare global {
-  interface Window {
-    loadPyodide?: (options: PyodideLoadOptions) => Promise<PyodideInterface>
-  }
-}
-
-// Pyodide singleton for reuse
-let pyodideInstance: PyodideInterface | null = null
-let pyodideLoading: Promise<PyodideInterface> | null = null
-
-/** Loads a script from URL and returns a promise */
-function loadScript(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const script = document.createElement("script")
-    script.src = src
-    script.crossOrigin = "anonymous"
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error(`Failed to load script: ${src}`))
-    document.head.appendChild(script)
-  })
+// Ответ бэкенд-эндпоинта POST /api/code/execute (проксирует в code-executor).
+interface BackendExecuteResponse {
+  success: boolean
+  stdout: string
+  stderr: string
+  result: string | null
+  error: string | null
 }
 
 /** Executes code in sandboxed iframe and returns result via postMessage */
@@ -85,239 +59,55 @@ function executeInSandbox(
   })
 }
 
-// Callback for Pyodide loading status
-type LoadingCallback = (status: "loading" | "ready") => void
-let loadingCallbacks: LoadingCallback[] = []
-
-export function onPyodideLoading(callback: LoadingCallback): () => void {
-  loadingCallbacks.push(callback)
-  return () => {
-    loadingCallbacks = loadingCallbacks.filter((cb) => cb !== callback)
-  }
-}
-
-function notifyLoading(status: "loading" | "ready") {
-  loadingCallbacks.forEach((cb) => cb(status))
-}
-
-async function loadPyodideRuntime(): Promise<PyodideInterface> {
-  if (typeof window === "undefined") {
-    throw new Error("Pyodide can only run in browser environment")
-  }
-
-  if (!window.loadPyodide) {
-    await loadScript(`${PYODIDE_INDEX_URL}pyodide.js`)
-  }
-
-  if (!window.loadPyodide) {
-    throw new Error("loadPyodide not available after script load")
-  }
-
-  return window.loadPyodide({ indexURL: PYODIDE_INDEX_URL })
-}
-
-// Check if code requires server-side execution
-function requiresServerExecution(code: string): string | null {
-  for (const pkg of SERVER_ONLY_PACKAGES) {
-    if (code.includes(`import ${pkg}`) || code.includes(`from ${pkg}`)) {
-      return pkg
-    }
-  }
-  return null
-}
-
-// Detect required packages from code
-function detectPackages(code: string): string[] {
-  const packages: Set<string> = new Set()
-
-  for (const [pkg, pipName] of Object.entries(PYODIDE_PACKAGE_MAP)) {
-    if (code.includes(pkg)) {
-      packages.add(pipName)
-    }
-  }
-
-  return Array.from(packages)
-}
-
-// Track installed packages
-const installedPackages: Set<string> = new Set()
-
-// Execute Python code on backend server (for PyTorch, TensorFlow, etc.)
-async function executeOnBackend(code: string, detectedPackage: string): Promise<ExecutionResult> {
-  try {
-    const response = await fetch("/api/execute-python", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    })
-
-    if (!response.ok) {
-      // If backend is not available, show helpful message
-      if (response.status === 404) {
-        return {
-          output: `⚠️ Package "${detectedPackage}" requires server-side execution.\n\nTo run PyTorch/TensorFlow code, a Python backend is required.\n\nStart the backend server:\n  cd ../backend && python server.py`,
-          status: "error",
-        }
-      }
-      const error = await response.text()
-      return { output: error, status: "error" }
-    }
-
-    const result = await response.json()
-    return {
-      output: result.output || "Code executed successfully",
-      status: result.error ? "error" : "success",
-    }
-  } catch (error) {
-    return {
-      output: `⚠️ Package "${detectedPackage}" requires server-side execution.\n\nBackend server is unavailable. Start it with:\n  cd ../backend && python server.py\n\nError: ${error instanceof Error ? error.message : String(error)}`,
-      status: "error",
-    }
-  }
-}
-
+/**
+ * Исполняет Python-код на бэкенде.
+ * Код (в т.ч. отредактированный пользователем) отправляется в
+ * POST /api/code/execute, который проксирует его в изолированный
+ * сервис code-executor.
+ */
 export async function executePython(
   code: string,
   timeout: number = PYTHON_EXECUTION_TIMEOUT
 ): Promise<ExecutionResult> {
-  // Check if code requires server-side execution (PyTorch, TensorFlow, etc.)
-  const serverOnlyPkg = requiresServerExecution(code)
-  if (serverOnlyPkg) {
-    // Try backend execution
-    return executeOnBackend(code, serverOnlyPkg)
-  }
+  try {
+    const res = await api.post<BackendExecuteResponse>(
+      "/api/code/execute",
+      { code },
+      { timeout }
+    )
 
-  // Lazy load Pyodide on first run
-  if (!pyodideInstance) {
-    if (!pyodideLoading) {
-      notifyLoading("loading")
-      pyodideLoading = loadPyodideRuntime()
-    }
-    try {
-      pyodideInstance = await pyodideLoading
-      notifyLoading("ready")
-    } catch (error) {
-      pyodideLoading = null
-      notifyLoading("ready")
-      return {
-        output: `Failed to load Python runtime: ${error instanceof Error ? error.message : String(error)}`,
-        status: "error",
-      }
-    }
-  }
-
-  // Execute with timeout
-  const timeoutPromise = new Promise<ExecutionResult>((_, reject) => {
-    setTimeout(() => reject(new Error("Execution timed out (60s limit)")), timeout)
-  })
-
-  const executionPromise = (async (): Promise<ExecutionResult> => {
-    try {
-      // Detect and install required packages
-      const requiredPackages = detectPackages(code)
-      const packagesToInstall = requiredPackages.filter((pkg) => !installedPackages.has(pkg))
-
-      if (packagesToInstall.length > 0) {
-        logger.info("Installing packages", { packages: packagesToInstall })
-
-        // Load micropip and install packages
-        await pyodideInstance.loadPackage("micropip")
-        const micropip = pyodideInstance.pyimport("micropip")
-
-        for (const pkg of packagesToInstall) {
-          try {
-            await micropip.install(pkg)
-            installedPackages.add(pkg)
-            logger.debug(`Package installed: ${pkg}`)
-          } catch (e) {
-            logger.warn(`Failed to install package: ${pkg}`, { error: e })
-          }
-        }
-      }
-
-      // Setup matplotlib for non-interactive backend if needed
-      if (code.includes("matplotlib")) {
-        pyodideInstance.runPython(`
-import matplotlib
-matplotlib.use('AGG')
-`)
-      }
-
-      // Setup stdout/stderr capture
-      pyodideInstance.runPython(`
-import sys
-from io import StringIO
-_stdout_capture = StringIO()
-_stderr_capture = StringIO()
-sys.stdout = _stdout_capture
-sys.stderr = _stderr_capture
-_plot_base64 = None
-`)
-
-      // If matplotlib is used, setup plot capture
-      if (code.includes("plt.show()")) {
-        // Replace plt.show() with our capture code
-        code = code.replace(
-          /plt\.show\(\)/g,
-          `
-import base64
-from io import BytesIO
-_buf = BytesIO()
-plt.savefig(_buf, format='png', dpi=100, bbox_inches='tight', facecolor='white')
-_buf.seek(0)
-_plot_base64 = base64.b64encode(_buf.read()).decode('utf-8')
-plt.close()
-print(f"[PLOT_DATA]{_plot_base64}[/PLOT_DATA]")
-`
-        )
-      }
-
-      // Execute user code
-      let result
-      try {
-        result = await pyodideInstance.runPythonAsync(code)
-      } catch (pyError: unknown) {
-        // Get captured stderr
-        const stderr = String(pyodideInstance.runPython("_stderr_capture.getvalue()") || "")
-        const errorMessage = pyError instanceof Error ? pyError.message : String(pyError)
-
-        // Restore stdout/stderr
-        pyodideInstance.runPython(`
-sys.stdout = sys.__stdout__
-sys.stderr = sys.__stderr__
-`)
-        return {
-          output: stderr || errorMessage,
-          status: "error",
-        }
-      }
-
-      // Get captured stdout
-      const stdout = String(pyodideInstance.runPython("_stdout_capture.getvalue()") || "")
-
-      // Restore stdout/stderr
-      pyodideInstance.runPython(`
-sys.stdout = sys.__stdout__
-sys.stderr = sys.__stderr__
-`)
-
-      // Return output (prefer stdout, fall back to result)
-      const output = stdout || (result !== undefined && result !== null ? String(result) : "")
+    if (res.success) {
+      const segments: string[] = []
+      if (res.stdout && res.stdout.trim()) segments.push(res.stdout.replace(/\n+$/, ""))
+      if (res.result != null && res.result !== "") segments.push(res.result)
+      const output = segments.join("\n")
       return {
         output: output || "Code executed successfully (no output)",
         status: "success",
       }
-    } catch (error) {
+    }
+
+    // Ошибка исполнения: показываем частичный stdout (если был) и текст ошибки.
+    const segments: string[] = []
+    if (res.stdout && res.stdout.trim()) segments.push(res.stdout.replace(/\n+$/, ""))
+    if (res.error) segments.push(res.error)
+    else if (res.stderr) segments.push(res.stderr)
+    return {
+      output: segments.join("\n") || "Execution failed",
+      status: "error",
+    }
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      // 401 уже инициировал редирект на /login внутри клиента.
+      if (error.status === 401) {
+        return { output: "Authentication required to run code", status: "error" }
+      }
+      logger.error("Backend code execution failed", error)
       return {
-        output: error instanceof Error ? error.message : String(error),
+        output: `Code executor unavailable: ${error.message}`,
         status: "error",
       }
     }
-  })()
-
-  try {
-    return await Promise.race([executionPromise, timeoutPromise])
-  } catch (error) {
     return {
       output: error instanceof Error ? error.message : String(error),
       status: "error",
@@ -546,16 +336,6 @@ export async function executeCode(
     output: `Language "${language}" is not supported for execution. Supported: Python, JavaScript`,
     status: "error",
   }
-}
-
-// Check if Pyodide is currently loading
-export function isPyodideLoading(): boolean {
-  return pyodideLoading !== null && pyodideInstance === null
-}
-
-// Check if Pyodide is ready
-export function isPyodideReady(): boolean {
-  return pyodideInstance !== null
 }
 
 // Re-export WebGPU utilities

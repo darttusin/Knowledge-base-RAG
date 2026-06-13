@@ -11,3 +11,6 @@ lora-train/runs/
 ragas_venv/
 eval-runner/logs/
 wandb/
+
+# Корневой .env с секретами (HF-токен, JWT) — не коммитим в публичный репозиторий
+/.env

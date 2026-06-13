@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     RAG_ENABLED: bool = True
     RAG_EMBEDDING_MODEL: str = "BAAI/bge-base-en-v1.5"
     RAG_RERANK_MODEL: str = "BAAI/bge-reranker-base"
-    RAG_LLM_MODEL: str = "TechxGenus/c4ai-command-r-v01-AWQ"
+    RAG_LLM_MODEL: str = "Qwen/Qwen2.5-Coder-7B-Instruct"
     RAG_LLM_API_URL: str = ""
     RAG_LLM_API_KEY: str = ""
     RAG_LLM_TIMEOUT: float = 30.0
@@ -52,7 +52,9 @@ class Settings(BaseSettings):
 
     # Code Executor Settings
     CODE_EXECUTOR_URL: str = "http://localhost:8002/execute"
-    CODE_EXECUTOR_TIMEOUT: int = 10
+    # Лимит исполнения кода в песочнице (сек). Холодный импорт torch ~3с,
+    # поэтому держим запас; code-executor допускает максимум 30.
+    CODE_EXECUTOR_TIMEOUT: int = 15
     CODE_EXECUTOR_MAX_CODE_LENGTH: int = 10000
 
     # Conversation History Settings

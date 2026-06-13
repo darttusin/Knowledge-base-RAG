@@ -1,0 +1,17 @@
+{
+  "precision_outlier": 0.6742424242424242,
+  "recall_outlier": 0.9888888888888889,
+  "f1_outlier": 0.8018018018018018,
+  "pr_auc": 0.9729584776452329,
+  "roc_auc": 0.99275,
+  "balanced_accuracy": 0.9406944444444445,
+  "inlier_acceptance": 0.8925,
+  "fpr": 0.1075,
+  "n_inliers": 400,
+  "n_outliers": 90,
+  "bucket_detection": {
+    "easy (бытовые)": 1.0,
+    "medium (прогр., не ML)": 1.0,
+    "hard (другие ML-фреймворки)": 0.9666666666666667
+  }
+}

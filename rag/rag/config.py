@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     eval_embedding_model: str = "Snowflake/snowflake-arctic-embed-m"
     rerank_model: str = "BAAI/bge-reranker-base"
 
-    llm_model_generation: str = "TechxGenus/c4ai-command-r-v01-AWQ"
+    llm_model_generation: str = "Qwen/Qwen2.5-Coder-7B-Instruct"
     llm_api_url: str = ""
     llm_api_key: str = ""
     llm_timeout: float = 30.0

@@ -13,8 +13,10 @@ export interface ValidationResult {
 }
 
 /**
- * Validates Python code for security issues
- * Used in: app/api/execute-python/route.ts
+ * Validates Python code for security issues.
+ * Note: Python execution now happens on the backend (POST /api/code/execute →
+ * sandboxed code-executor), which performs its own AST validation. This client-side
+ * check remains as a lightweight pre-filter via validateCode().
  */
 export function validatePythonCode(code: string): ValidationResult {
   if (code.length > MAX_CODE_LENGTH) {

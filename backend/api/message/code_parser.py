@@ -13,8 +13,11 @@ async def extract_python_code(text: str) -> list[str]:
 
 
 async def execute_code_block(code: str, executor_url: str, timeout: int | None = None) -> dict:
-    if timeout is None:
-        timeout = settings.CODE_EXECUTOR_TIMEOUT
+    # Лимит исполнения внутри песочницы (process.join). Импорт torch холодный
+    # ~3с, поэтому дефолт берём из настроек, а не жёсткие 5с.
+    exec_timeout = timeout if timeout is not None else settings.CODE_EXECUTOR_TIMEOUT
+    # HTTP-клиенту даём запас сверх лимита исполнения на сетевой round-trip.
+    client_timeout = exec_timeout + 5
 
     # Validate code length
     if len(code) > settings.CODE_EXECUTOR_MAX_CODE_LENGTH:
@@ -26,9 +29,9 @@ async def execute_code_block(code: str, executor_url: str, timeout: int | None =
             "error": f"Code exceeds maximum length of {settings.CODE_EXECUTOR_MAX_CODE_LENGTH} characters",
         }
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=client_timeout) as client:
             response = await client.post(
-                executor_url, json={"code": code, "timeout": 5}
+                executor_url, json={"code": code, "timeout": exec_timeout}
             )
             response.raise_for_status()
             return response.json()  # .json() is synchronous in httpx

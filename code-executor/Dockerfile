@@ -21,8 +21,11 @@ COPY pyproject.toml ./
 # Установка Python зависимостей
 RUN uv pip install --system -e .
 
-# Установка научных библиотек (опционально, игнорируем ошибки)
-RUN uv pip install --system numpy pandas torch --index-url https://download.pytorch.org/whl/cpu || true
+# Установка научных библиотек.
+# numpy/pandas — с PyPI; torch — CPU-сборка с отдельного индекса PyTorch
+# (на индексе PyTorch нет pandas, поэтому установки разделены).
+RUN uv pip install --system numpy pandas
+RUN uv pip install --system torch --index-url https://download.pytorch.org/whl/cpu
 
 # ВАЖНО: Удаляем build-essential после установки зависимостей
 # Это предотвращает компиляцию exploit кода внутри контейнера

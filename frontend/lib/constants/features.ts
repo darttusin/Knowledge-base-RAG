@@ -1,18 +1,5 @@
 // Feature flags and runtime configuration
 
-// Pyodide configuration
-export const PYODIDE_VERSION = "0.24.1"
-export const PYODIDE_INDEX_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`
-
-// Package mappings for Pyodide (code import name -> pip package name)
-export const PYODIDE_PACKAGE_MAP: Record<string, string> = {
-  numpy: "numpy",
-  pandas: "pandas",
-  matplotlib: "matplotlib",
-  scipy: "scipy",
-  sklearn: "scikit-learn",
-}
-
 // JavaScript library CDN resources with SRI
 export interface CDNResource {
   url: string
@@ -57,6 +44,5 @@ export const EXECUTABLE_LANGUAGES = [
 export const FEATURES = {
   enableCodeExecution: true,
   enableWebGPU: true,
-  enablePyodide: true,
   enableServerExecution: true,
 } as const

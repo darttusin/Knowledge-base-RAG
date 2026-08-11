@@ -19,8 +19,10 @@ import sys
 from pathlib import Path
 
 from loguru import logger
+from prompt_contract import get_contract
 
 from lora_train.config import (
+    ALL_LINEAR,
     DataConfig,
     LoraConfig,
     LoraTrainConfig,
@@ -47,10 +49,26 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--trust-remote-code", action="store_true")
 
+    p.add_argument(
+        "--contract",
+        type=str,
+        default="grounded",
+        help="prompt contract: a built-in name (grounded, sourced) or a JSON path",
+    )
+
     # lora
     p.add_argument("--lora-r", type=int, default=16)
     p.add_argument("--lora-alpha", type=int, default=32)
     p.add_argument("--lora-dropout", type=float, default=0.05)
+    p.add_argument(
+        "--lora-targets",
+        type=str,
+        default=ALL_LINEAR,
+        help=(
+            "'all-linear' (default, works on any architecture) or a "
+            "comma-separated list of module names"
+        ),
+    )
 
     # training
     p.add_argument("--output-dir", type=Path, required=True)
@@ -115,10 +133,16 @@ def main() -> None:
             r=args.lora_r,
             alpha=args.lora_alpha,
             dropout=args.lora_dropout,
+            target_modules=(
+                ALL_LINEAR
+                if args.lora_targets == ALL_LINEAR
+                else tuple(t.strip() for t in args.lora_targets.split(",") if t.strip())
+            ),
         ),
         data=DataConfig(
             train_jsonl=args.train_jsonl,
             val_jsonl=args.val_jsonl,
+            contract=get_contract(args.contract),
             max_seq_length=args.max_seq_length,
         ),
         training=TrainingConfig(

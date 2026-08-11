@@ -18,6 +18,8 @@ members = [
     "lora-train",
     "eval-runner",
     "dataset-synth",
+    "prompt-contract",
+    "lora-pipeline",
 ]
 
 [tool.uv.sources]
@@ -28,6 +30,8 @@ dataset-prep = { workspace = true }
 lora-train = { workspace = true }
 eval-runner = { workspace = true }
 dataset-synth = { workspace = true }
+prompt-contract = { workspace = true }
+lora-pipeline = { workspace = true }
 
 [tool.ruff.lint]
 select = ["F", "E", "W", "C90", "I", "S", "BLE", "T20", "ARG", "ERA", "PLR0913"]
@@ -37,7 +41,8 @@ ignore = ["E501", "S104", "C901", "BLE001"]
 max-args = 7
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "ARG"]
+# `tests/**` only matches the repo root; module test dirs live one level down
+"**/tests/**/*.py" = ["S101", "ARG"]
 "scripts/extract_module_templates.py" = ["E402"]
 "scripts/extract_schemas.py" = ["E402"]
 

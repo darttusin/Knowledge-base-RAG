@@ -1,3 +1,4 @@
+import hashlib
 import logging
 
 import chromadb
@@ -11,8 +12,15 @@ logger = logging.getLogger(__name__)
 def create_collection(
     chroma_path: str,
     collection_name: str = "docs_fast",
+    recreate: bool = False,
 ) -> chromadb.Collection:
     client = chromadb.PersistentClient(path=chroma_path)
+    if recreate:
+        try:
+            client.delete_collection(name=collection_name)
+            logger.info("Deleted existing collection %s", collection_name)
+        except Exception:  # noqa: BLE001 - chroma raises different types per version
+            logger.debug("No existing collection %s to delete", collection_name)
     return client.get_or_create_collection(
         name=collection_name,
         metadata={"hnsw:space": "cosine"},
@@ -25,9 +33,15 @@ def index_chunks(
     model: SentenceTransformer,
     batch_size: int = 200,
 ) -> None:
+    # A non-empty collection is left untouched: re-indexing different documents
+    # into the same collection would silently mix two corpora. Pass
+    # recreate=True to create_collection() to index a different document set.
     if collection.count():
-        logger.info(
-            "Collection already has %d chunks, skipping indexing", collection.count()
+        logger.warning(
+            "Collection %s already has %d chunks — skipping indexing. "
+            "Use recreate=True to index a different document set.",
+            collection.name,
+            collection.count(),
         )
         return
 
@@ -36,8 +50,10 @@ def index_chunks(
         batch = chunks[i : i + batch_size]
         documents_batch = [c.page_content for c in batch]
         metadatas_batch = [c.metadata for c in batch]
+        # Stable across processes: builtin hash() is salted per interpreter
+        # run (PYTHONHASHSEED), which made chunk ids differ between rebuilds.
         ids_batch = [
-            f"{i + j}_{hash(c.page_content[:50]) & 0xFFFFFF}"
+            f"{i + j}_{hashlib.sha1(c.page_content[:50].encode()).hexdigest()[:8]}"  # noqa: S324
             for j, c in enumerate(batch)
         ]
         embeddings_batch = model.encode(

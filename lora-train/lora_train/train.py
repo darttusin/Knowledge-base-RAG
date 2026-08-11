@@ -109,4 +109,14 @@ def run_training(cfg: LoraTrainConfig) -> None:
     final_dir = cfg.training.output_dir / "final"
     trainer.save_model(str(final_dir))
     tokenizer.save_pretrained(final_dir)
-    logger.info("training done. adapter saved → {path}", path=final_dir)
+
+    # The adapter is only valid under the prompt format it was trained on —
+    # ship that format with the weights so serving can verify the match.
+    contract_path = cfg.data.contract.save(final_dir)
+    logger.info(
+        "training done. adapter saved → {path} (contract {c}={fp})",
+        path=final_dir,
+        c=cfg.data.contract.name,
+        fp=cfg.data.contract.fingerprint(),
+    )
+    logger.info("prompt contract saved → {p}", p=contract_path)

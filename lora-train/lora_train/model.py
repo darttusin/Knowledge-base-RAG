@@ -75,11 +75,18 @@ def load_model_and_tokenizer(
 
 def attach_lora(model: PreTrainedModel, lora_cfg: LoraConfig) -> PeftModel:
     """Attach a fresh LoRA adapter to the base model and return the PEFT-wrapped model."""
+    # "all-linear" must stay a string — PEFT treats it as a directive to
+    # resolve every linear layer itself; listing it would target characters.
+    targets = (
+        lora_cfg.target_modules
+        if isinstance(lora_cfg.target_modules, str)
+        else list(lora_cfg.target_modules)
+    )
     peft_config = PeftLoraConfig(
         r=lora_cfg.r,
         lora_alpha=lora_cfg.alpha,
         lora_dropout=lora_cfg.dropout,
-        target_modules=list(lora_cfg.target_modules),
+        target_modules=targets,
         bias=lora_cfg.bias,
         task_type="CAUSAL_LM",
     )

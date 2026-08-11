@@ -2,6 +2,23 @@
 
 > Вопросно‑ответная система по документации PyTorch на базе Retrieval‑Augmented Generation (RAG) с воспроизводимыми бенчмарками, понятными метриками и готовым интерфейсом (Telegram‑бот).
 
+## Быстрый старт: своя документация → обученная LoRA
+
+Один прогон строит индекс по вашим документам, генерирует по нему
+grounded-датасет teacher-моделью и обучает адаптер:
+
+```bash
+uv run python -m lora_pipeline \
+    --docs-dir ./my-docs \
+    --output-dir runs/my-lora \
+    --teacher-api-url https://api.openai.com/v1 \
+    --teacher-api-key sk-... \
+    --teacher-model gpt-4o-mini
+```
+
+Подробности, формат входных файлов и все параметры —
+[lora-pipeline/README.md](lora-pipeline/README.md).
+
 ## Цели и KPI
 
 * Ответы на вопросы по PyTorch с опорой на первоисточник (ссылки на документацию обязательны в каждом ответе)

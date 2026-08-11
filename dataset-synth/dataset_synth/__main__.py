@@ -56,6 +56,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--n-qa-per-chunk", type=int, default=3)
     p.add_argument("--max-workers", type=int, default=8)
 
+    # context assembly
+    p.add_argument(
+        "--context-chunks",
+        type=int,
+        default=1,
+        help="chunks per training example; set to the serving top_k",
+    )
+    p.add_argument("--near-distractor-fraction", type=float, default=0.7)
+
     # adversarial + mix
     p.add_argument("--adversarial-fraction", type=float, default=0.20)
     p.add_argument("--mix-jsonl", type=str, default="", help="prepared SO jsonl to blend in")
@@ -89,6 +98,8 @@ def main() -> None:
         teacher_max_tokens=args.teacher_max_tokens,
         n_qa_per_chunk=args.n_qa_per_chunk,
         max_workers=args.max_workers,
+        context_chunks=args.context_chunks,
+        near_distractor_fraction=args.near_distractor_fraction,
         adversarial_fraction=args.adversarial_fraction,
         mix_jsonl=args.mix_jsonl,
         mix_fraction=args.mix_fraction,

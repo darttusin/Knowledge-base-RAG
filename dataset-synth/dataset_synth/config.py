@@ -12,7 +12,7 @@ class SynthConfig:
     collection_name: str = "docs_fast"
     min_chunk_chars: int = 300  # skip tiny/table-only chunks (~11% of corpus)
     max_chunk_chars: int = 4000
-    max_chunks: int = 0  # 0 = all; set small for dry runs
+    max_chunks: int = 0  # 0 = all; set small to limit calls and output
 
     # === teacher LLM (any OpenAI-compatible endpoint) ===
     teacher_model: str = "gpt-4o-mini"

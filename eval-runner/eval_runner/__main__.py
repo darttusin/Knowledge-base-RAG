@@ -3,26 +3,36 @@
 Three usage patterns:
 
   1. Pure CLI (all flags):
-        uv run python -m eval_runner \\
+        WANDB_MODE=offline uv run --locked --package eval-runner \\
+            python -m eval_runner \\
             --llm-model "qwen-base" \\
-            --llm-api-url http://server:8000/v1 \\
-            --judge-api-url https://api.openai.com/v1 \\
+            --llm-api-url http://127.0.0.1:8000/v1 \\
+            --no-semantic \\
+            --no-ragas \\
             --retriever-type rerank \\
             --top-k 5 \\
             --wandb-run-name "qwen-base-rerank-k5"
 
   2. Single JSON preset:
-        uv run python -m eval_runner --config configs/lora_rerank.json
+        WANDB_MODE=offline uv run --locked --package eval-runner \\
+            python -m eval_runner \\
+            --config eval-runner/configs/base-rerank-k5.json \\
+            --llm-api-url http://127.0.0.1:8000/v1 \\
+            --no-ragas
 
   3. Layered presets (recommended for an experiment matrix):
-        uv run python -m eval_runner \\
-            --config configs/_base.json \\
-            --config configs/lora-rerank-k5.json \\
-            --llm-api-url http://193.222.57.16:44090/v1
+        WANDB_MODE=offline uv run --locked --package eval-runner \\
+            python -m eval_runner \\
+            --config eval-runner/configs/_base.json \\
+            --config eval-runner/configs/lora-rerank-k5.json \\
+            --llm-api-url http://127.0.0.1:8000/v1 \\
+            --no-ragas
 
   Last source wins: defaults → first --config → next --config → CLI flags.
 
 Field names in the JSON file match RunConfig attribute names exactly.
+The CLI always initializes a W&B run; use ``WANDB_MODE=offline`` when data must
+remain local, and see ``eval-runner/README.md`` before using real credentials.
 """
 
 from __future__ import annotations
@@ -78,8 +88,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--llm-timeout", type=float)
 
     # === judge LLM ===
-    # No --judge-api-key flag: vLLM endpoints don't validate it, and for
-    # cloud judges (OpenAI etc.) put the key in a --config JSON preset.
+    # No --judge-api-key flag. RunConfig is sent to W&B and the RAGAS path
+    # passes this value through argv, so a real cloud key is currently unsafe.
+    # Local vLLM uses the default placeholder value "EMPTY".
     p.add_argument("--judge-model", type=str)
     p.add_argument("--judge-api-url", type=str)
 

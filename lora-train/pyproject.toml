@@ -1,20 +1,14 @@
 [project]
 name = "lora-train"
 version = "0.1.0"
-# 3.12 — это то, что стоит в большинстве PyTorch-шаблонов vast.ai.
-# Код не использует 3.13-специфичных фич, можно опускать ниже при нужде.
+# Package metadata permits standalone Python 3.12, while the repository-level
+# uv workspace and canonical lock currently require Python 3.13.
 requires-python = ">=3.12"
-# NOTE: this module is CUDA + Linux only. Install on the vast.ai server,
-# not on macOS/CPU. bitsandbytes has no macOS wheel.
+# NOTE: real training is supported only on a suitable Linux/CUDA host; the
+# stack is not validated as a macOS/CPU training path.
 #
-# Pinned upper bounds:
-#   - transformers <5: v5 changed several APIs we depend on
-#   - trl <1.0:        v1 removed DataCollatorForCompletionOnlyLM
-#   - datasets <4:     v4 changed schema handling, not tested here
-#   - bnb <0.50:       v0.49 has known instability with paged optims
-#
-# torch is installed separately on the server from PyTorch's CUDA-pinned
-# index (see README / install steps) so the version here is only a floor.
+# Upper bounds describe the currently constrained API window. Do not loosen
+# them without resolving the workspace lock and running a CUDA smoke.
 dependencies = [
     "torch>=2.5,<2.8",
     "transformers>=4.46,<5",

@@ -1,21 +1,25 @@
-"""Upload a trained LoRA adapter to the HuggingFace Hub.
+"""Upload a trained LoRA adapter directory to the Hugging Face Hub.
 
-Creates (or reuses) a model repo, writes a proper model card with the
-base-model tag so HF shows the adapter↔base relationship, and uploads
-the adapter folder via `upload_folder` (handles the 154 MB safetensors
-through the Hub's LFS automatically).
+This is an external publishing operation: it creates or reuses a remote model
+repository and uploads the selected directory. Unless ``--no-model-card`` is
+passed, it first overwrites ``README.md`` inside that local adapter directory.
 
-Auth: run `huggingface-cli login` once (or set HF_TOKEN env var) before
-running this.
+The generated card assumes ``BASE_MODEL`` below and reads only a few LoRA fields
+from ``adapter_config.json``. It cannot infer the dataset, model revision,
+quantization, prompt contract actually used at serving time, or evaluation
+results; review the card and adapter contents before publishing.
 
-Usage:
-    cd lora-train
-    uv run python scripts/upload_to_hf.py \\
-        --adapter-dir runs/qwen25-coder-7b-lora-r16-v1/final \\
+Use a cached Hugging Face login or ``HF_TOKEN``. Avoid ``--token`` when possible
+because command-line arguments can be visible to other local processes.
+
+Usage from the workspace root:
+    uv run --locked --package lora-train python \\
+        lora-train/scripts/upload_to_hf.py \\
+        --adapter-dir /absolute/path/to/adapter/final \\
         --repo-id <your-username>/pytorch-rag-lora-r16
 
     # private repo:
-    uv run python scripts/upload_to_hf.py ... --private
+    ... --private
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ import json
 import sys
 from pathlib import Path
 
-from huggingface_hub import HfApi, create_repo, upload_folder
+from huggingface_hub import HfApi, create_repo
 
 BASE_MODEL = "Qwen/Qwen2.5-Coder-7B-Instruct"
 
@@ -45,42 +49,37 @@ tags:
 # PyTorch-RAG LoRA adapter
 
 LoRA adapter for [`{base_model}`]({base_url}), fine-tuned for a
-retrieval-augmented QA system over PyTorch documentation + StackOverflow.
+retrieval-augmented QA experiment.
 
 Part of an HSE university project on RAG over a private knowledge base.
 
-## Training summary
+## Adapter metadata
 
-- **Base model:** `{base_model}`
-- **Method:** LoRA (PEFT), bf16, RAG-aware SFT
+- **Assumed base model:** `{base_model}`
+- **Method:** LoRA (PEFT)
 - **Rank / alpha / dropout:** {r} / {alpha} / {dropout}
 - **Target modules:** {targets}
-- **Trainable params:** {trainable}
-- **Dataset:** ~1.8k StackOverflow PyTorch Q&A pairs, each enriched with
-  top-k retrieved documentation chunks as context, plus ~15% adversarial
-  "cannot answer from context" examples.
 
-## Usage
+This uploader does not reconstruct training provenance. Record the exact base
+and dataset revisions, preprocessing, quantization, optimizer, seed, Git SHA and
+prompt-contract fingerprint separately. If `prompt_contract.json` is present in
+the adapter directory, serving must load and apply that same contract explicitly.
+
+## Loading
 
 ```python
+import torch
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 base = AutoModelForCausalLM.from_pretrained(
-    "{base_model}", dtype="bfloat16", device_map="auto"
+    "{base_model}", dtype=torch.bfloat16, device_map="auto"
 )
 model = PeftModel.from_pretrained(base, "{repo_id}")
 tok = AutoTokenizer.from_pretrained("{repo_id}")
-
-messages = [
-    {{"role": "system", "content": "You are an expert PyTorch assistant. "
-      "Answer using ONLY the provided Context."}},
-    {{"role": "user", "content": "Context:\\n<retrieved chunks>\\n\\nQuestion: <q>"}},
-]
-inputs = tok.apply_chat_template(messages, return_tensors="pt", add_generation_prompt=True).to(model.device)
-out = model.generate(inputs, max_new_tokens=400)
-print(tok.decode(out[0][inputs.shape[1]:], skip_special_tokens=True))
 ```
+
+Loading succeeds independently of prompt compatibility or answer quality.
 
 ### Serving with vLLM
 
@@ -91,13 +90,12 @@ vllm serve {base_model} \\
     --max-lora-rank {r}
 ```
 
-## Note on results
+## Evaluation status
 
-This is a research artifact. In our evaluation the v1 adapter did **not**
-outperform the base model on the RAG task (composite RAG score dropped vs
-the `base-vanilla` baseline) — most likely due to a stylistic shift toward
-terse StackOverflow answers and limited training data. See the project
-report for the full analysis. Use as a baseline / starting point.
+This is a research artifact. The uploader does not run evaluation and this model
+card makes no quality claim. Publish separately versioned results with corpus,
+retrieval, generator, judge, metric weights, sample and seed provenance before
+using the adapter beyond an experiment.
 """
 
 
@@ -117,8 +115,6 @@ def _build_model_card(adapter_dir: Path, repo_id: str) -> str:
     else:
         targets_str = str(targets)
 
-    trainable = "~40M (0.53% of 7.66B)"  # from training log; informational
-
     return MODEL_CARD_TEMPLATE.format(
         base_model=BASE_MODEL,
         base_url=f"https://huggingface.co/{BASE_MODEL}",
@@ -127,7 +123,6 @@ def _build_model_card(adapter_dir: Path, repo_id: str) -> str:
         alpha=cfg.get("lora_alpha", "?"),
         dropout=cfg.get("lora_dropout", "?"),
         targets=targets_str,
-        trainable=trainable,
     )
 
 

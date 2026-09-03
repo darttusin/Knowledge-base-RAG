@@ -1,9 +1,9 @@
-"""All knobs of a single evaluation run.
+"""Most configurable knobs of a single evaluation run.
 
-The whole point of this dataclass is reproducibility: every field that
-can change between runs lives here. `asdict(RunConfig)` becomes
-`wandb.config`, so any future comparison in wandb knows exactly what
-produced each datapoint.
+`asdict(RunConfig)` becomes `wandb.config`, but prompt details and part of
+the RAGAS subprocess configuration are still hard-coded elsewhere. The
+serialized dataclass also contains generator/judge API-key fields; callers
+must not pass real secrets until tracking redacts them.
 
 To compare "base model vs LoRA": run twice with different `llm_model` /
 `llm_api_url`. The vLLM server should be started with `--enable-lora
@@ -65,14 +65,11 @@ class RunConfig:
     compute_ragas: bool = True  # faithfulness, answer_relevancy, context_recall
 
     # === Composite RAG score weights ===
-    # Faithfulness-priority: for a RAG assistant over a private knowledge
-    # base, a confidently-wrong (hallucinated) API answer is worse than a
-    # slightly-less-relevant but grounded one — groundedness is the whole
-    # point of RAG. Hence faithfulness gets the dominant weight. The
-    # original BaseLine notebook used 0.4/0.4/0.2; we shifted to faith
-    # priority after the v2 evaluation showed a faithfulness↔relevancy
-    # trade-off. Always report a weight-sensitivity analysis alongside the
-    # headline number (see scripts/recompute_score.py).
+    # Policy choice: give faithfulness the dominant weight because an
+    # unsupported API answer is high-risk for a private knowledge assistant.
+    # The historical BaseLine notebook used 0.4/0.4/0.2. Always report the
+    # individual metrics and a weight-sensitivity analysis alongside the
+    # composite headline (see scripts/recompute_score.py).
     rag_score_w_faithfulness: float = 0.6
     rag_score_w_answer_relevancy: float = 0.2
     rag_score_w_context_recall: float = 0.2

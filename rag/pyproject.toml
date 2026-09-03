@@ -1,8 +1,8 @@
 [project]
 name = "rag"
 version = "0.1.0"
-# 3.12 rather than 3.13 so the ingest stage installs on the same GPU boxes
-# `lora-train` targets; nothing here uses 3.13-only features.
+# This package remains standalone-compatible with 3.12; the root uv workspace
+# and its canonical lock currently require Python 3.13.
 requires-python = ">=3.12"
 dependencies = [
     "prompt-contract",

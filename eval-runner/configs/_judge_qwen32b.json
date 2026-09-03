@@ -1,4 +1,4 @@
 {
-  "_comment": "Independent judge overlay: Qwen2.5-32B served on a SEPARATE instance. Different weights from the 7B generator, so no self-evaluation bias (the v1 flaw). Set --judge-api-url on the CLI to the tunnel for the judge instance.",
+  "_comment": "Separate judge overlay: Qwen2.5-32B served on another instance. Different weights reduce exact self-judging, but the shared model family can still introduce correlated bias. Set --judge-api-url on the CLI to the judge endpoint.",
   "judge_model": "Qwen/Qwen2.5-32B-Instruct-AWQ"
 }

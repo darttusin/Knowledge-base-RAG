@@ -44,7 +44,7 @@ Strategies:
 - `rerank` — larger dense candidate set + CrossEncoder;
 - `query_transform` — original, LLM rewrite, HyDE, три searches, dedup и rerank.
 
-README-описания BM25/RRF не реализованы. Query transform добавляет LLM latency/cost
+BM25/RRF не реализованы. Query transform добавляет LLM latency/cost
 до answer generation; тестируйте частичные failures и детерминированный candidate
 merge. CrossEncoder logits не гарантированы в [0,1], поэтому не называйте текущий
 relevance калиброванной вероятностью.
@@ -56,8 +56,9 @@ Source metadata должно оставаться согласованным с 
 ## Prompt contract
 
 `prompt-contract` fingerprint покрывает system/user/chunk templates, joiner и
-`context_chunks`. Для адаптера contract один и тот же в synth/train/serve/eval;
-число chunks соответствует top-k. Token-level изменение — новая версия контракта.
+`context_chunks`. Synth хранит structured chunks, training рендерит выбранный
+contract, а `rag.chains` умеет применить его явно; число chunks должно
+соответствовать serving top-k. Token-level изменение — новая версия контракта.
 
 Текущий backend вызывает `answer(..., contract=None)`, а serving/eval не загружают
 и не сверяют adapter fingerprint. Наличие `prompt_contract.json` после training не

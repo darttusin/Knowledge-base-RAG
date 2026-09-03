@@ -1,8 +1,9 @@
-"""Context assembly is where a grounded dataset is won or lost.
+"""Tests for assembling candidate context around teacher-produced pairs.
 
 If the gold chunk is always first, or the distractors come from an
 unrelated part of the corpus, the model learns a shortcut instead of
-learning to read the context it is given.
+learning to read the context it is given. These tests verify structure,
+not whether the teacher's answer is actually supported by the gold chunk.
 """
 
 from __future__ import annotations

@@ -1,19 +1,22 @@
+---
 openapi: 3.1.0
 info:
-  title: FastAPI
+  title: Knowledge Base RAG Backend API
   version: 0.1.0
 paths:
-  /api/user/auth:
+  "/api/user/auth":
     post:
       tags:
       - User
-      summary: User Auth
+      summary: Аутентификация пользователя
+      description: Вход пользователя по email и паролю. Возвращает JWT токен и данные
+        пользователя.
       operationId: user_auth_api_user_auth_post
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UserAuth'
+              "$ref": "#/components/schemas/UserAuth"
         required: true
       responses:
         '200':
@@ -21,218 +24,168 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                "$ref": "#/components/schemas/AuthResponse"
         '404':
-          description: Not Found
+          description: User not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-        '400':
-          description: Bad Request
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '401':
+          description: Invalid password
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '403':
+          description: User account is inactive
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/user:
+                "$ref": "#/components/schemas/HTTPValidationError"
+  "/api/user/me":
+    get:
+      tags:
+      - User
+      summary: Получить данные текущего пользователя
+      description: Возвращает данные пользователя из JWT токена.
+      operationId: get_current_user_api_user_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/User"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+      security:
+      - HTTPBearer: []
+  "/api/user":
     put:
       tags:
       - User
-      summary: User Update
+      summary: Обновление данных пользователя
+      description: Изменение email, username или пароля. Требует JWT токен.
       operationId: user_update_api_user_put
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UserChanges'
+              "$ref": "#/components/schemas/UserChanges"
         required: true
       responses:
         '204':
           description: Successful Response
         '404':
-          description: Not Found
+          description: User not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '400':
-          description: Bad Request
+          description: Invalid data or email already taken
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '401':
-          description: Unauthorized
+          description: Unauthorized or invalid old password
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                "$ref": "#/components/schemas/HTTPValidationError"
+      security:
+      - HTTPBearer: []
     delete:
       tags:
       - User
-      summary: User Delete
+      summary: Удаление пользователя
+      description: Деактивация аккаунта пользователя. Требует JWT токен.
       operationId: user_delete_api_user_delete
       responses:
         '204':
           description: Successful Response
         '404':
-          description: Not Found
+          description: User not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '401':
           description: Unauthorized
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-  /api/dialogue:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+      security:
+      - HTTPBearer: []
+  "/api/dialogue":
     post:
       tags:
       - Dialogue
-      summary: Create Dialogue
+      summary: Создать новый диалог
+      description: Создание нового диалога для текущего пользователя. Требует JWT
+        токен.
       operationId: create_dialogue_api_dialogue_post
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Dialogue'
-        '401':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Unauthorized
-    delete:
-      tags:
-      - Dialogue
-      summary: Delete Dialogue
-      operationId: delete_dialogue_api_dialogue_delete
-      parameters:
-      - name: dialogue_id
-        in: query
-        required: true
-        schema:
-          type: integer
-          title: Dialogue Id
-      responses:
-        '204':
-          description: Successful Response
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Not Found
-        '401':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Unauthorized
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    put:
-      tags:
-      - Dialogue
-      summary: Change Dialogue
-      operationId: change_dialogue_api_dialogue_put
-      parameters:
-      - name: dialogue_id
-        in: query
-        required: true
-        schema:
-          type: integer
-          title: Dialogue Id
+      security:
+      - HTTPBearer: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ChangeDialogue'
+              "$ref": "#/components/schemas/CreateDialogue"
       responses:
-        '204':
+        '201':
           description: Successful Response
-        '404':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Not Found
+                "$ref": "#/components/schemas/DialogueResponse"
         '401':
+          description: Unauthorized
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Unauthorized
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                "$ref": "#/components/schemas/HTTPValidationError"
     get:
       tags:
       - Dialogue
-      summary: Get Dialogue
-      operationId: get_dialogue_api_dialogue_get
-      parameters:
-      - name: dialogue_id
-        in: query
-        required: true
-        schema:
-          type: integer
-          title: Dialogue Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Dialogue'
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Not Found
-        '401':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Unauthorized
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/dialogue/list:
-    get:
-      tags:
-      - Dialogue
-      summary: Get Dialogues
-      operationId: get_dialogues_api_dialogue_list_get
+      summary: Получить список диалогов
+      description: Возвращает список всех диалогов пользователя. Поддерживает фильтрацию
+        по имени. Требует JWT токен.
+      operationId: get_dialogues_api_dialogue_get
+      security:
+      - HTTPBearer: []
       parameters:
       - name: query
         in: query
@@ -241,7 +194,9 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Поисковый запрос для фильтрации по имени
           title: Query
+        description: Поисковый запрос для фильтрации по имени
       responses:
         '200':
           description: Successful Response
@@ -250,108 +205,348 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/ShortDialogue'
-                title: Response Get Dialogues Api Dialogue List Get
-        '404':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Not Found
+                  "$ref": "#/components/schemas/ShortDialogue"
+                title: Response Get Dialogues Api Dialogue Get
         '401':
+          description: Unauthorized
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Unauthorized
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/message:
-    post:
+                "$ref": "#/components/schemas/HTTPValidationError"
+  "/api/dialogue/{dialogue_id}":
+    get:
       tags:
-      - Message
-      summary: New Message
-      operationId: new_message_api_message_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NewMessage'
+      - Dialogue
+      summary: Получить диалог по ID
+      description: Возвращает полную информацию о диалоге. Требует JWT токен.
+      operationId: get_dialogue_api_dialogue__dialogue_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: dialogue_id
+        in: path
         required: true
+        schema:
+          type: integer
+          title: Dialogue Id
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageResponse'
+                "$ref": "#/components/schemas/DialogueResponse"
         '404':
-          description: Not Found
+          description: Dialogue not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '401':
           description: Unauthorized
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/message/feedback:
-    post:
+                "$ref": "#/components/schemas/HTTPValidationError"
+    put:
       tags:
-      - Message
-      summary: Message Feedback
-      operationId: message_feedback_api_message_feedback_post
+      - Dialogue
+      summary: Обновить диалог
+      description: Изменение имени диалога. Требует JWT токен.
+      operationId: update_dialogue_api_dialogue__dialogue_id__put
+      security:
+      - HTTPBearer: []
       parameters:
-      - name: message_id
-        in: query
+      - name: dialogue_id
+        in: path
         required: true
         schema:
           type: integer
-          title: Message Id
-      - name: feedback
-        in: query
+          title: Dialogue Id
+      requestBody:
         required: true
-        schema:
-          $ref: '#/components/schemas/MessageFeedbackEnum'
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/UpdateDialogue"
       responses:
         '204':
           description: Successful Response
         '404':
+          description: Dialogue not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Not Found
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '401':
+          description: Unauthorized
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Unauthorized
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/source/list:
+                "$ref": "#/components/schemas/HTTPValidationError"
+    delete:
+      tags:
+      - Dialogue
+      summary: Удалить диалог
+      description: Удаление диалога и всех связанных сообщений. Требует JWT токен.
+      operationId: delete_dialogue_api_dialogue__dialogue_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: dialogue_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Dialogue Id
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          description: Dialogue not found
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/HTTPValidationError"
+  "/api/dialogue/queries/pre-generated":
+    get:
+      tags:
+      - Dialogue
+      summary: Получить предзаготовленные запросы
+      description: Возвращает список предзаготовленных запросов для отображения в
+        UI.
+      operationId: get_pre_generated_queries_api_dialogue_queries_pre_generated_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  "$ref": "#/components/schemas/PreGeneratedQuery"
+                type: array
+                title: Response Get Pre Generated Queries Api Dialogue Queries Pre
+                  Generated Get
+  "/api/message":
+    post:
+      tags:
+      - Message
+      summary: Отправить сообщение
+      description: Отправка сообщения в диалог. Сообщение обрабатывается RAG API и
+        возвращается ответ. Требует JWT токен.
+      operationId: send_message_api_message_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SendMessage"
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__message__models__MessageResponse"
+        '404':
+          description: Dialogue not found
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '503':
+          description: RAG API unavailable
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '500':
+          description: RAG API error
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/HTTPValidationError"
+      security:
+      - HTTPBearer: []
+  "/api/message/stream":
+    post:
+      tags:
+      - Message
+      summary: Отправить сообщение (streaming)
+      description: Streaming-ответ с SSE событиями chunk/complete. Требует JWT токен.
+      operationId: send_message_stream_api_message_stream_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SendMessage"
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: Dialogue not found
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '503':
+          description: RAG API unavailable
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '500':
+          description: RAG API error
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/HTTPValidationError"
+      security:
+      - HTTPBearer: []
+  "/api/message/feedback":
+    post:
+      tags:
+      - Message
+      summary: Установить обратную связь
+      description: Установка like/dislike для сообщения. Требует JWT токен.
+      operationId: set_feedback_api_message_feedback_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/MessageFeedback"
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          description: Message not found
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/HTTPValidationError"
+      security:
+      - HTTPBearer: []
+  "/api/source":
+    post:
+      tags:
+      - Source
+      summary: Загрузить источник
+      description: 'Загрузка нового источника документа. Поддерживаемые форматы: md,
+        txt, pdf, docx. Максимальный размер: 10 MB. Требует JWT токен.'
+      operationId: upload_source_api_source_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              "$ref": "#/components/schemas/Body_upload_source_api_source_post"
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/SourceForList"
+        '400':
+          description: Invalid file or file too large
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/HTTPValidationError"
     get:
       tags:
       - Source
-      summary: Sources List
-      operationId: sources_list_api_source_list_get
+      summary: Получить список источников
+      description: Возвращает список всех источников пользователя с пагинацией. Поддерживает
+        полнотекстовый поиск по имени и/или содержимому. Требует JWT токен.
+      operationId: get_sources_list_api_source_get
+      security:
+      - HTTPBearer: []
       parameters:
       - name: query
         in: query
@@ -360,15 +555,41 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Поисковый запрос для полнотекстового поиска
           title: Query
+        description: Поисковый запрос для полнотекстового поиска
+      - name: search_in
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: "^(name|content|both)$"
+          description: 'Где искать: ''name'' (только в названии), ''content'' (только
+            в содержимом), ''both'' (в обоих)'
+          default: both
+          title: Search In
+        description: 'Где искать: ''name'' (только в названии), ''content'' (только
+          в содержимом), ''both'' (в обоих)'
+      - name: folder_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: ID папки для фильтрации (null = все документы)
+          title: Folder Id
+        description: ID папки для фильтрации (null = все документы)
       - name: page
         in: query
         required: false
         schema:
           type: integer
           minimum: 1
+          description: Номер страницы
           default: 1
           title: Page
+        description: Номер страницы
       - name: limit
         in: query
         required: false
@@ -376,72 +597,41 @@ paths:
           type: integer
           maximum: 100
           minimum: 1
+          description: Количество элементов на странице
           default: 10
           title: Limit
+        description: Количество элементов на странице
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SourcesList'
+                "$ref": "#/components/schemas/SourcesList"
         '401':
+          description: Unauthorized
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Unauthorized
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/source:
-    post:
-      tags:
-      - Source
-      summary: Upload Source
-      operationId: upload_source_api_source_post
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Body_upload_source_api_source_post'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SourceForList'
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Bad Request
-        '401':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Unauthorized
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                "$ref": "#/components/schemas/HTTPValidationError"
+  "/api/source/{source_id}":
     get:
       tags:
       - Source
-      summary: Get Source
-      operationId: get_source_api_source_get
+      summary: Получить содержимое источника
+      description: Возвращает полное содержимое источника по ID. Требует JWT токен.
+      operationId: get_source_api_source__source_id__get
+      security:
+      - HTTPBearer: []
       parameters:
       - name: source_id
-        in: query
+        in: path
         required: true
         schema:
           type: integer
@@ -452,33 +642,79 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SourceContent'
+                "$ref": "#/components/schemas/SourceContent"
         '404':
+          description: Source not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Not Found
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '401':
+          description: Unauthorized
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Unauthorized
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                "$ref": "#/components/schemas/HTTPValidationError"
+    patch:
+      tags:
+      - Source
+      summary: Переместить источник в папку
+      description: Перемещает источник в указанную папку (или в корень, если folder_id=null).
+        Требует JWT токен.
+      operationId: move_source_api_source__source_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Source Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SourceMoveRequest"
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          description: Source or folder not found
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/HTTPValidationError"
     delete:
       tags:
       - Source
-      summary: Delete Source
-      operationId: delete_source_api_source_delete
+      summary: Удалить источник
+      description: Удаление источника документа. Требует JWT токен.
+      operationId: delete_source_api_source__source_id__delete
+      security:
+      - HTTPBearer: []
       parameters:
       - name: source_id
-        in: query
+        in: path
         required: true
         schema:
           type: integer
@@ -487,32 +723,35 @@ paths:
         '204':
           description: Successful Response
         '404':
+          description: Source not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Not Found
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '401':
+          description: Unauthorized
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Unauthorized
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/source/download:
+                "$ref": "#/components/schemas/HTTPValidationError"
+  "/api/source/{source_id}/download":
     get:
       tags:
       - Source
-      summary: Download File
-      operationId: download_file_api_source_download_get
+      summary: Скачать источник
+      description: Скачивание файла источника. Требует JWT токен.
+      operationId: download_source_api_source__source_id__download_get
+      security:
+      - HTTPBearer: []
       parameters:
       - name: source_id
-        in: query
+        in: path
         required: true
         schema:
           type: integer
@@ -524,25 +763,178 @@ paths:
             application/json:
               schema: {}
         '404':
+          description: Source not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Not Found
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '401':
+          description: Unauthorized
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-          description: Unauthorized
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                "$ref": "#/components/schemas/HTTPValidationError"
+  "/api/folder":
+    get:
+      tags:
+      - folders
+      summary: Get Folders
+      description: Get all folders for the current user with document counts
+      operationId: get_folders_api_folder_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  "$ref": "#/components/schemas/FolderResponse"
+                type: array
+                title: Response Get Folders Api Folder Get
+      security:
+      - HTTPBearer: []
+    post:
+      tags:
+      - folders
+      summary: Create Folder
+      description: Create a new folder
+      operationId: create_folder_api_folder_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/FolderCreateRequest"
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/FolderResponse"
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/HTTPValidationError"
+      security:
+      - HTTPBearer: []
+  "/api/folder/{folder_id}":
+    patch:
+      tags:
+      - folders
+      summary: Move Folder
+      description: Move folder under a different parent (or to root if parent_id=null).
+      operationId: move_folder_api_folder__folder_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: folder_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Folder Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/FolderMoveRequest"
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/HTTPValidationError"
+    delete:
+      tags:
+      - folders
+      summary: Delete Folder
+      description: Delete a folder (and all its contents)
+      operationId: delete_folder_api_folder__folder_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: folder_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Folder Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/HTTPValidationError"
+  "/api/code/execute":
+    post:
+      tags:
+      - Code
+      summary: Выполнить Python-код
+      description: Исполняет произвольный Python-код в изолированной песочнице (сервис
+        code-executor). Используется фронтендом для запуска кода из ответа модели,
+        в том числе отредактированного пользователем.
+      operationId: execute_code_api_code_execute_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ExecuteCodeRequest"
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ExecuteCodeResponse"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/api__code__models__ErrorMessage"
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/HTTPValidationError"
+      security:
+      - HTTPBearer: []
 components:
   schemas:
+    AuthResponse:
+      properties:
+        access_token:
+          type: string
+          title: Access Token
+        token_type:
+          type: string
+          title: Token Type
+        user:
+          "$ref": "#/components/schemas/User"
+      type: object
+      required:
+      - access_token
+      - token_type
+      - user
+      title: AuthResponse
     Body_upload_source_api_source_post:
       properties:
         file:
@@ -553,108 +945,180 @@ components:
       required:
       - file
       title: Body_upload_source_api_source_post
-    ChangeDialogue:
+    CodeExecution:
       properties:
-        dialogue_name:
+        code:
+          type: string
+          title: Code
+        success:
+          type: boolean
+          title: Success
+        stdout:
+          type: string
+          title: Stdout
+        stderr:
+          type: string
+          title: Stderr
+        result:
           anyOf:
           - type: string
           - type: 'null'
-          title: Dialogue Name
+          title: Result
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
       type: object
-      title: ChangeDialogue
-    Dialogue:
+      required:
+      - code
+      - success
+      - stdout
+      - stderr
+      title: CodeExecution
+    CreateDialogue:
+      properties:
+        name:
+          type: string
+          title: Name
+          default: New conversation
+      type: object
+      title: CreateDialogue
+    DialogueResponse:
       properties:
         dialogue_id:
           type: integer
           title: Dialogue Id
-        dialogue_name:
+        name:
           type: string
-          title: Dialogue Name
-          default: New conversation
+          title: Name
+        created_at:
+          type: string
+          title: Created At
+        updated_at:
+          type: string
+          title: Updated At
         pre_generated_queries:
           items:
-            $ref: '#/components/schemas/PreGeneratedQuery'
+            "$ref": "#/components/schemas/PreGeneratedQuery"
           type: array
           title: Pre Generated Queries
         messages:
-          anyOf:
-          - items:
-              $ref: '#/components/schemas/DialogueMessage'
-            type: array
-          - type: 'null'
+          items:
+            "$ref": "#/components/schemas/api__dialogue__models__MessageResponse"
+          type: array
           title: Messages
       type: object
       required:
       - dialogue_id
+      - name
+      - created_at
+      - updated_at
       - pre_generated_queries
-      title: Dialogue
-    DialogueMessage:
-      properties:
-        messages:
-          items:
-            $ref: '#/components/schemas/DialogueMessageContent'
-          type: array
-          title: Messages
-        responses:
-          items:
-            $ref: '#/components/schemas/DialogueMessageResponse'
-          type: array
-          title: Responses
-      type: object
-      required:
       - messages
-      - responses
-      title: DialogueMessage
-    DialogueMessageContent:
+      title: DialogueResponse
+    ExecuteCodeRequest:
       properties:
-        message_id:
-          type: integer
-          title: Message Id
-        content:
+        code:
           type: string
-          title: Content
+          minLength: 1
+          title: Code
+          description: Python-код для исполнения
       type: object
       required:
-      - message_id
-      - content
-      title: DialogueMessageContent
-    DialogueMessageResponse:
+      - code
+      title: ExecuteCodeRequest
+    ExecuteCodeResponse:
       properties:
-        message_id:
-          type: integer
-          title: Message Id
-        response_id:
-          type: integer
-          title: Response Id
-        content:
+        success:
+          type: boolean
+          title: Success
+        stdout:
           type: string
-          title: Content
-        sources:
-          items:
-            type: integer
-          type: array
-          title: Sources
+          title: Stdout
+          default: ''
+        stderr:
+          type: string
+          title: Stderr
+          default: ''
+        result:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Result
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
       type: object
       required:
-      - message_id
-      - response_id
-      - content
-      - sources
-      title: DialogueMessageResponse
-    ErrorMessage:
+      - success
+      title: ExecuteCodeResponse
+    FolderCreateRequest:
       properties:
-        detail:
+        name:
           type: string
-          title: Detail
+          title: Name
+        path:
+          type: string
+          title: Path
+        parent_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Parent Id
       type: object
       required:
-      - detail
-      title: ErrorMessage
+      - name
+      - path
+      title: FolderCreateRequest
+    FolderMoveRequest:
+      properties:
+        parent_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Parent Id
+      type: object
+      title: FolderMoveRequest
+    FolderResponse:
+      properties:
+        id:
+          type: integer
+          title: Id
+        name:
+          type: string
+          title: Name
+        path:
+          type: string
+          title: Path
+        parent_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Parent Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        document_count:
+          type: integer
+          title: Document Count
+          default: 0
+      type: object
+      required:
+      - id
+      - name
+      - path
+      - parent_id
+      - created_at
+      title: FolderResponse
     HTTPValidationError:
       properties:
         detail:
           items:
-            $ref: '#/components/schemas/ValidationError'
+            "$ref": "#/components/schemas/ValidationError"
           type: array
           title: Detail
       type: object
@@ -666,36 +1130,37 @@ components:
       - doc
       - browser
       title: IconsEnum
+    MessageFeedback:
+      properties:
+        message_id:
+          type: integer
+          title: Message Id
+        feedback:
+          "$ref": "#/components/schemas/MessageFeedbackEnum"
+      type: object
+      required:
+      - message_id
+      - feedback
+      title: MessageFeedback
     MessageFeedbackEnum:
       type: string
       enum:
       - like
       - dislike
       title: MessageFeedbackEnum
-    MessageResponse:
+    PreGeneratedQuery:
       properties:
-        message_id:
-          type: integer
-          title: Message Id
-        response_id:
-          type: integer
-          title: Response Id
-        content:
+        query:
           type: string
-          title: Content
-        sources:
-          items:
-            type: integer
-          type: array
-          title: Sources
+          title: Query
+        icon:
+          "$ref": "#/components/schemas/IconsEnum"
       type: object
       required:
-      - message_id
-      - response_id
-      - content
-      - sources
-      title: MessageResponse
-    NewMessage:
+      - query
+      - icon
+      title: PreGeneratedQuery
+    SendMessage:
       properties:
         dialogue_id:
           type: integer
@@ -703,49 +1168,74 @@ components:
         message:
           type: string
           title: Message
-        edited_message_id:
+        parent_message_id:
           anyOf:
-          - type: string
+          - type: integer
           - type: 'null'
-          title: Edited Message Id
+          title: Parent Message Id
       type: object
       required:
       - dialogue_id
       - message
-      title: NewMessage
-    PreGeneratedQuery:
-      properties:
-        query:
-          type: string
-          title: Query
-        icon:
-          $ref: '#/components/schemas/IconsEnum'
-      type: object
-      required:
-      - query
-      - icon
-      title: PreGeneratedQuery
+      title: SendMessage
     ShortDialogue:
       properties:
         dialogue_id:
           type: integer
           title: Dialogue Id
-        dialogue_name:
+        name:
           type: string
-          title: Dialogue Name
+          title: Name
+        created_at:
+          type: string
+          title: Created At
+        updated_at:
+          type: string
+          title: Updated At
       type: object
       required:
       - dialogue_id
-      - dialogue_name
+      - name
+      - created_at
+      - updated_at
       title: ShortDialogue
     SourceContent:
       properties:
+        source_id:
+          type: integer
+          title: Source Id
+        name:
+          type: string
+          title: Name
+        source_type:
+          "$ref": "#/components/schemas/SourceType"
         content:
           type: string
           title: Content
+        size_bytes:
+          type: integer
+          title: Size Bytes
+        created_at:
+          type: string
+          title: Created At
+        folder_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Folder Id
+        folder_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Folder Path
       type: object
       required:
+      - source_id
+      - name
+      - source_type
       - content
+      - size_bytes
+      - created_at
       title: SourceContent
     SourceForList:
       properties:
@@ -756,26 +1246,74 @@ components:
           type: string
           title: Name
         source_type:
-          $ref: '#/components/schemas/SourceType'
+          "$ref": "#/components/schemas/SourceType"
         size_bytes:
           type: integer
           title: Size Bytes
-        load_timestamp:
-          type: integer
-          title: Load Timestamp
+        created_at:
+          type: string
+          title: Created At
+        folder_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Folder Id
+        folder_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Folder Path
       type: object
       required:
       - source_id
       - name
       - source_type
       - size_bytes
-      - load_timestamp
+      - created_at
       title: SourceForList
+    SourceMoveRequest:
+      properties:
+        folder_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Folder Id
+      type: object
+      title: SourceMoveRequest
+    SourceReference:
+      properties:
+        source_id:
+          type: integer
+          title: Source Id
+        document_name:
+          type: string
+          title: Document Name
+        chunk_text:
+          type: string
+          title: Chunk Text
+        relevance_score:
+          type: number
+          title: Relevance Score
+        folder_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Folder Path
+      type: object
+      required:
+      - source_id
+      - document_name
+      - chunk_text
+      - relevance_score
+      title: SourceReference
+      description: Source reference with full metadata.
     SourceType:
       type: string
       enum:
       - md
       - txt
+      - pdf
+      - docx
       title: SourceType
     SourcesList:
       properties:
@@ -785,9 +1323,6 @@ components:
         total_size_bytes:
           type: integer
           title: Total Size Bytes
-        last_update_timestamp:
-          type: number
-          title: Last Update Timestamp
         page:
           type: integer
           title: Page
@@ -799,19 +1334,27 @@ components:
           title: Total Pages
         sources:
           items:
-            $ref: '#/components/schemas/SourceForList'
+            "$ref": "#/components/schemas/SourceForList"
           type: array
           title: Sources
       type: object
       required:
       - total_count
       - total_size_bytes
-      - last_update_timestamp
       - page
       - limit
       - total_pages
       - sources
       title: SourcesList
+    UpdateDialogue:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+      type: object
+      title: UpdateDialogue
     User:
       properties:
         user_id:
@@ -819,6 +1362,7 @@ components:
           title: User Id
         email:
           type: string
+          format: email
           title: Email
         username:
           type: string
@@ -833,6 +1377,7 @@ components:
       properties:
         email:
           type: string
+          format: email
           title: Email
         password:
           type: string
@@ -847,6 +1392,7 @@ components:
         email:
           anyOf:
           - type: string
+            format: email
           - type: 'null'
           title: Email
         username:
@@ -887,3 +1433,95 @@ components:
       - msg
       - type
       title: ValidationError
+    api__code__models__ErrorMessage:
+      properties:
+        detail:
+          type: string
+          title: Detail
+      type: object
+      required:
+      - detail
+      title: ErrorMessage
+    api__dialogue__models__MessageResponse:
+      properties:
+        message_id:
+          type: integer
+          title: Message Id
+        parent_message_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Parent Message Id
+        user_message:
+          type: string
+          title: User Message
+        assistant_response:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Assistant Response
+        sources:
+          anyOf:
+          - items:
+              "$ref": "#/components/schemas/SourceReference"
+            type: array
+          - type: 'null'
+          title: Sources
+        feedback:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feedback
+        created_at:
+          type: string
+          title: Created At
+      type: object
+      required:
+      - message_id
+      - user_message
+      - assistant_response
+      - feedback
+      - created_at
+      title: MessageResponse
+    api__message__models__MessageResponse:
+      properties:
+        message_id:
+          type: integer
+          title: Message Id
+        parent_message_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Parent Message Id
+        user_message:
+          type: string
+          title: User Message
+        assistant_response:
+          type: string
+          title: Assistant Response
+        sources:
+          items:
+            "$ref": "#/components/schemas/SourceReference"
+          type: array
+          title: Sources
+        code_executions:
+          items:
+            "$ref": "#/components/schemas/CodeExecution"
+          type: array
+          title: Code Executions
+          default: []
+        created_at:
+          type: string
+          title: Created At
+      type: object
+      required:
+      - message_id
+      - user_message
+      - assistant_response
+      - sources
+      - created_at
+      title: MessageResponse
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer

@@ -1,26 +1,19 @@
 """One command: a folder of documentation in, a trained LoRA adapter out.
 
-Smallest useful invocation — generate the dataset with an OpenAI teacher
-and train on the local GPU:
+Smallest useful invocation — generate a small dataset with a local
+OpenAI-compatible teacher and stop before training:
 
-    uv run python -m lora_pipeline \\
+    uv run --locked --package lora-pipeline python -m lora_pipeline \\
         --docs-dir ./my-docs \\
-        --output-dir runs/my-lora \\
-        --teacher-api-url https://api.openai.com/v1 \\
-        --teacher-api-key sk-... \\
-        --teacher-model gpt-4o-mini
-
-Same thing with a local teacher served by vLLM (no API costs):
-
-    uv run python -m lora_pipeline \\
-        --docs-dir ./my-docs \\
-        --output-dir runs/my-lora \\
+        --output-dir /tmp/rag-lora-smoke \\
         --teacher-api-url http://localhost:8000/v1 \\
-        --teacher-model Qwen/Qwen2.5-32B-Instruct-AWQ
+        --teacher-api-key EMPTY \\
+        --teacher-model Qwen/Qwen2.5-32B-Instruct-AWQ \\
+        --max-chunks 20 \\
+        --skip-train
 
-Check the shape of the data before paying for a full generation pass:
-
-    ... --max-chunks 20 --skip-train
+The manifest currently serializes teacher_api_key. Do not pass a real
+cloud key until secret redaction is implemented.
 
 Produce the dataset on a laptop, train later on a GPU box:
 
@@ -136,7 +129,7 @@ def _add_control_args(p: argparse.ArgumentParser) -> None:
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="lora_pipeline",
-        description="Documentation folder → grounded dataset → trained LoRA adapter",
+        description="Documentation folder → synthetic dataset → trained LoRA adapter",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )

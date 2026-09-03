@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""
-Скрипт для пересоздания таблиц в базе данных с новой структурой
-ВНИМАНИЕ: Удаляет все данные!
+"""Destructive legacy reset that drops every ORM-managed database table.
+
+Interactive confirmation does not make this recoverable: all PostgreSQL users,
+dialogues, messages, folders and sources are lost, while ChromaDB remains stale.
+The script calls ``Base.metadata.create_all`` directly and does not run the full
+``init_db`` FTS/upgrade DDL afterwards. Never use it on shared/prod data.
 """
 import sys
 import asyncio

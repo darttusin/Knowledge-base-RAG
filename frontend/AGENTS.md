@@ -2,7 +2,8 @@
 
 Наследует корневой `AGENTS.md`. Canonical frontend — фактический код в `app/`,
 `components/`, `hooks/` и `lib/` плюс реальные backend routes. `CLAUDE.md` и
-особенно `FOLDER_SYSTEM.md` частично устарели.
+`FOLDER_SYSTEM.md` синхронизированы на 2026-09-03, но код остаётся источником
+истины.
 
 ## Stack, structure, style
 
@@ -19,15 +20,15 @@ Zustand. Node target — 20; package manager — pnpm. Не запускайте
 
 Следуйте `.prettierrc`: no semicolons, double quotes, 2 spaces, width 100, ES5
 trailing commas, Tailwind sorting. Feature files обычно kebab-case, components
-PascalCase, hooks `useSomething.ts`. Не переименовывайте массово по старому
-`CLAUDE.md` и не правьте shadcn primitives без проверки всех consumers.
+PascalCase, hooks `useSomething.ts`. Не делайте массовых переименований и не
+правьте shadcn primitives без проверки всех consumers.
 
 Большая часть feature code client-side. Добавляйте `"use client"` только при
 browser APIs/hooks. API client использует `window`/`localStorage` и не готов для
 Server Components.
 
 Не трогайте `clo`, `.next` или tracked `tsconfig.tsbuildinfo`. Последний сохраняйте
-через `tsc --incremental false`.
+через `pnpm exec tsc --noEmit --incremental false`.
 
 ## API и auth
 
@@ -48,8 +49,9 @@ UI отсутствует. Не меняйте storage semantics без скво
 
 ## Chat и streaming
 
-`chat-store.ts` хранит conversations, active conversation, messages, panels,
-folders и async state. Message invariants:
+`lib/store/chat-store.ts` хранит conversations, active conversation, messages,
+panels, `selectedFolderIds` и async state. Сами folder entities находятся в
+`lib/store/folder-store.ts`. Message invariants:
 
 - backend ids numbers, UI ids strings;
 - user view id `<message_id>-user`, assistant id — numeric string;

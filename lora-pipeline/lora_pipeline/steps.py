@@ -1,4 +1,7 @@
-"""The three stages, each independently skippable and resumable.
+"""Implement the three independently skippable pipeline stages.
+
+Ingest and synthesis can reuse existing artifacts; the training stage starts a
+new training run whenever it is not skipped.
 
 Heavy dependencies are imported inside the functions on purpose: producing
 a dataset on a laptop should not require the CUDA training stack, and
@@ -102,7 +105,7 @@ def step_ingest(cfg: PipelineConfig) -> dict:
 
 
 def step_synth(cfg: PipelineConfig) -> dict:
-    """Chunks → grounded Q&A pairs with distractors and refusals."""
+    """Chunks → teacher-generated Q&A pairs with distractors and refusals."""
     from dataset_synth.config import SynthConfig
     from dataset_synth.pipeline import run_synth
 
@@ -150,8 +153,9 @@ def step_train(cfg: PipelineConfig) -> dict:
         from lora_train.train import run_training
     except ImportError as exc:  # pragma: no cover - environment-dependent
         raise RuntimeError(
-            "the training stack is not installed — run "
-            "`uv sync --package lora-pipeline --extra train` on a CUDA machine, "
+            "the training stack is not installed — invoke the pipeline through "
+            "`uv run --locked --package lora-pipeline --extra train python -m "
+            "lora_pipeline ...` on a CUDA machine, "
             "or pass --skip-train to stop after building the dataset"
         ) from exc
 

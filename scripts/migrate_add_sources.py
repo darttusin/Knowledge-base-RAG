@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""
-Migration script to add sources column to messages table.
+"""Legacy idempotent DDL helper for the already-current ``messages.sources`` field.
+
+It has no migration ledger/downgrade and mutates the database selected by backend
+settings. New installations get the column from ORM metadata; only use this on a
+reviewed old PostgreSQL schema with a backup.
 """
 import asyncio
 import sys

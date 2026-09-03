@@ -36,7 +36,7 @@ PureFn = Callable[[str], str]
 class Pipeline:
     rag_fn: RagFn
     pure_fn: PureFn
-    embed_model: SentenceTransformer  # reused later for semantic-similarity metric
+    embed_model: SentenceTransformer  # retriever model, exposed for inspection/reuse
 
 
 def _resolve_device(spec: str) -> str:

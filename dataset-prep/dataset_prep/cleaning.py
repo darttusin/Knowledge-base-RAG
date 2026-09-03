@@ -1,9 +1,9 @@
-"""HTML → Markdown conversion preserving code blocks.
+"""HTML → Markdown conversion with fenced code blocks.
 
-StackOverflow stores posts as HTML. We convert to GFM markdown so that
-`<pre><code>` becomes a fenced ```python code block — otherwise the LLM
-loses code structure during fine-tuning and starts producing prose where
-code is expected.
+StackOverflow stores posts as HTML. ``<pre><code>`` becomes a fenced block;
+a normalized language tag is included only when the source CSS classes provide
+a recognized hint. This conversion preserves structure imperfectly and does
+not itself guarantee downstream training quality.
 """
 
 from __future__ import annotations

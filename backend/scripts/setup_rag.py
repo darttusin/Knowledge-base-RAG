@@ -1,4 +1,11 @@
-"""Setup script for RAG system: index documents and train classifier."""
+"""Legacy manual index/classifier bootstrap; not the current backend setup path.
+
+The script writes to paths resolved by standalone ``rag.Settings``. Indexing a
+non-empty collection is skipped with a warning by ``index_chunks``; classifier training
+uses a small hard-coded sample and saves ``pytorch_classifier.joblib``, while the
+backend default expects a different filename. Do not run it against bundled or
+shared data without reviewing the resolved paths and outputs.
+"""
 
 import sys
 from pathlib import Path

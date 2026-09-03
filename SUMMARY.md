@@ -1,64 +1,88 @@
-# Knowledge Base RAG — Саммари проекта
+# Knowledge Base RAG — фактическая сводка
 
-**Команда:** darttusin | **Дата:** Июнь 2026
+## Назначение
 
----
+Исследовательская система вопросов и ответов по базе знаний. В текущем demo
+используются документация PyTorch и Stack Overflow: пользователь задаёт вопрос в
+веб-чате, backend извлекает контекст из ChromaDB, обращается к внешнему
+OpenAI-compatible LLM и сохраняет диалог в PostgreSQL.
 
-## Проблема
+Проект демонстрирует полный RAG/ML workflow, но не является готовой production
+платформой и не гарантирует, что данные остаются внутри закрытого контура.
 
-В любой организации накапливаются внутренние документы: регламенты, технические гайды, wiki, записи встреч, базы знаний поддержки. Найти нужную информацию в этом массиве — отдельная задача. Обычный поиск ищет по словам, не понимает смысл вопроса и не даёт ответ — только список ссылок, которые нужно прочитать самому.
+## Runtime
 
----
+```text
+Next.js :3000
+  └─ FastAPI :8001
+       ├─ PostgreSQL :5432 — auth, dialogues, messages, folders, sources, FTS
+       ├─ ChromaDB + embeddings + reranker
+       ├─ внешний OpenAI-compatible generator
+       ├─ off-topic classifier
+       └─ code-executor :8002
+```
 
-## Идея
+Реальный retrieval — dense, dense + CrossEncoder rerank или query transform
+(rewrite + HyDE + rerank). PostgreSQL FTS обслуживает поиск по загруженным
+sources. BM25/RRF/FAISS retrieval, Prometheus/Grafana/Jaeger и общий backend
+`/health` отсутствуют. Telegram bot и parser — legacy/experimental и не входят в
+Compose.
 
-**RAG-платформа над приватной базой знаний.** Организация загружает свои документы — и получает умного ассистента, который отвечает на вопросы по их содержимому. Система не генерирует из воздуха: она находит релевантные фрагменты из загруженных документов и формулирует ответ на их основе. Каждый ответ — с указанием источника.
+## Что есть в интерфейсе и API
 
-Главный принцип: **знания остаются внутри.** Никакой утечки во внешние сервисы — LLM работает локально или в закрытом контуре.
+- JWT login существующего пользователя; публичной регистрации нет.
+- CRUD диалогов, streaming через SSE, feedback и история.
+- Upload/list/search/read/download/move/delete источников и дерево папок.
+- Просмотр источников/citations и запуск Python blocks через отдельный executor.
+- Live API schema: `/api/docs`; `backend/openapi.json` и `.yaml` синхронизированы
+  с `app.openapi()` на 2026-09-03, но неверно моделируют media types SSE/download.
 
----
+## Offline ML-контур
 
-## Что получилось
+- `dataset-prep`: Stack Overflow + retrieved context в legacy SFT format.
+- `dataset-synth`: teacher-generated/adversarial examples; groundedness не проверяется.
+- `prompt-contract`: общий prompt format и fingerprint.
+- `lora-train`: LoRA/QLoRA adapter на Linux/CUDA.
+- `lora-pipeline`: ingest/synth переиспользуют artifacts; training запускается заново.
+- `eval-runner`: lexical/semantic/RAGAS metrics и обязательное W&B logging.
 
-### Загрузка и организация знаний
-Документы загружаются через веб-интерфейс, организуются по папкам. Система автоматически разбивает их на фрагменты, строит векторный индекс и полнотекстовый поиск.
+## Основные ограничения
 
-### Умный поиск
-Комбинация семантического поиска (нейросетевые эмбеддинги) и классического полнотекстового (BM25) с переранжировкой — система находит нужное даже если вопрос сформулирован иначе, чем написано в документе.
+- Внешний LLM не входит в Compose; без него чат не работает.
+- Shared Chroma retrieval не фильтруется по пользователю. Upload в уже непустую
+  collection может остаться только в PostgreSQL, потому что indexing пропускается.
+- Выбор папок в UI пока не ограничивает RAG retrieval end-to-end.
+- DB и Chroma не образуют общую транзакцию; upload/delete/move могут расходиться.
+- PDF/DOCX перечислены API, но backend фактически принимает UTF-8 text.
+- Code executor имеет timeout/RestrictedPython, однако разрешённые scientific API,
+  сеть и writable mount не дают strong isolation.
+- JWT хранится в browser localStorage; soft delete не отзывает выданный token.
+- Docker backend build context включает весь repo и потенциальные env/artifacts;
+  full image build пока не считается green.
+- Pipeline/eval могут сохранить API keys в manifest, W&B config или subprocess
+  arguments.
 
-### Исполнение кода из ответов
-Если в ответе есть Python-код — система запускает его и показывает результат прямо в чате. Для технических баз знаний это критично.
+## Состояние качества
 
-### Фильтрация нерелевантных вопросов
-Классификатор тематики определяет, относится ли вопрос к загруженным материалам. Вопросы "мимо темы" отсеиваются до генерации.
+На аудите 2026-09-03 lock и структура Compose валидировались, но whole-repo
+baseline не green: Ruff, formatting и Pyright имеют накопленные ошибки; backend
+tests содержат stale imports/mocks и смешивают PostgreSQL FTS с SQLite; executor
+manifest не перечисляет все test/runtime scientific dependencies. CI, Alembic и
+frontend test runner отсутствуют.
 
-### Интерфейсы
-- **Веб-чат** — диалоги с историей, просмотр источников
-- **Telegram-бот** — тот же ассистент в мессенджере
-- **REST API** — интеграция в любой внешний сервис
+Поэтому изменения проверяются адресно, а data/index/model artifacts нельзя
+перегенерировать как побочный эффект. Bundled corpus и Chroma фактически являются
+обычными tracked Git blobs, несмотря на нерекурсивные LFS-правила.
 
-### Наблюдаемость
-Метрики латентности и качества, распределённая трассировка запросов — система понятна в продакшне.
+## Навигация
 
----
-
-## Валидация на реальных данных
-
-В качестве бенчмарка использована документация PyTorch и 28k+ вопросов с StackOverflow. Это позволило проверить качество retrieval и генерации на реальных техническихзапросах с известными правильными ответами — там есть ground truth для оценки.
-
----
-
-## Ценность
-
-| Без системы | С системой |
-|---|---|
-| Поиск по папкам и Ctrl+F | Вопрос на естественном языке |
-| Читать весь документ | Получить точный ответ с цитатой |
-| Новый сотрудник не знает где что лежит | Спросил — получил ответ со ссылкой на источник |
-| Знания размазаны по разным местам | Единая точка доступа к базе знаний |
-
----
-
-## Стек
-
-Python · FastAPI · Next.js · ChromaDB · PostgreSQL · Docker · Prometheus · Grafana · Jaeger
+- [README.md](README.md) — setup, запуск, env names, проверки и предупреждения.
+- [AGENTS.md](AGENTS.md) — правила разработки и карта рисков.
+- [backend/AGENTS.md](backend/AGENTS.md), [rag/AGENTS.md](rag/AGENTS.md),
+  [frontend/AGENTS.md](frontend/AGENTS.md) — component-specific contracts.
+- [backend/README_RAG_INTEGRATION.md](backend/README_RAG_INTEGRATION.md) и
+  [frontend/FOLDER_SYSTEM.md](frontend/FOLDER_SYSTEM.md) — текущая интеграция и
+  document/folder behavior.
+- [lora-pipeline/README.md](lora-pipeline/README.md) — docs-to-adapter flow.
+- [eval-runner/README.md](eval-runner/README.md) — eval presets; defaults
+  перепроверяются по [config.py](eval-runner/eval_runner/config.py).

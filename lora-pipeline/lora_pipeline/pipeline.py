@@ -2,9 +2,8 @@
 
     docs/ ──ingest──▶ ChromaDB ──synth──▶ train.jsonl ──train──▶ adapter/
 
-Each stage writes its artifacts into `output_dir` and is skipped when its
-output already exists, so an interrupted run resumes instead of repeating
-an hour of embedding or a paid generation pass.
+Each stage writes artifacts into `output_dir`. Ingest and synth can reuse
+existing outputs; training runs again unless explicitly skipped.
 """
 
 from __future__ import annotations
@@ -58,7 +57,11 @@ def _write_manifest(cfg: PipelineConfig, stages: dict) -> Path:
 
 
 def run_pipeline(cfg: PipelineConfig) -> dict:
-    """Run every non-skipped stage and return the manifest contents."""
+    """Run every non-skipped stage and return their result summaries.
+
+    The complete config, prompt contract and stage summaries are also written
+    to ``manifest.json`` in ``output_dir``.
+    """
     cfg.validate()
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
 

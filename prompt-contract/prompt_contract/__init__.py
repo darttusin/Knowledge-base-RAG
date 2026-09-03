@@ -1,21 +1,20 @@
-"""Single source of truth for the prompt format shared by every stage.
+"""Versioned prompt-format primitives for training and opt-in inference.
 
 A LoRA adapter is only valid under the exact prompt format it was trained
 on. Change the system prompt, swap the order of question and context, or
 render a chunk differently, and the adapter is being asked to do a task it
 never saw — the degradation is silent, because nothing crashes.
 
-This module turns that format into an explicit, versioned, hashable object
-that is produced once and consumed by all four stages:
+This module turns that format into an explicit, versioned, hashable object:
 
-    dataset-synth  → renders training contexts
+    dataset-synth  → stores structured chunks and shared refusal texts
     lora-train     → builds the chat messages it trains on
-    rag (serving)  → builds the prompt at inference time
-    eval-runner    → measures whatever serving produced
+    rag            → can build the inference prompt when passed a contract
 
 `fingerprint()` is stored next to the adapter, so a mismatch between the
 contract an adapter was trained under and the one it is served with can be
-detected instead of guessed at.
+detected by an integration. The current backend and eval-runner do not load
+or validate the adapter contract automatically.
 """
 
 from __future__ import annotations

@@ -1,15 +1,15 @@
 """CLI entrypoint.
 
 Usage:
-    cd dataset-prep
-    uv run python -m dataset_prep \
-        --csv ../data/stackoverflow-pytorch.csv \
-        --out ../data/sft
+    uv run --locked --package dataset-prep python -m dataset_prep \\
+        --csv data/stackoverflow-pytorch.csv \\
+        --out /tmp/rag-sft
 
-The pipeline is RAG-aware: it retrieves PyTorch documentation context
-from the same ChromaDB index used in production (default:
-data/chromadb, collection docs_fast) and injects ~15% adversarial
-refusal examples.
+The pipeline retrieves PyTorch documentation context from the same default
+ChromaDB path and collection as the current backend configuration
+(`data/chromadb`, `docs_fast`) and adds refusal-target examples according to
+the configured adversarial fraction. This is an offline research dataset,
+not evidence of production or tenant isolation.
 
 Outputs:
     <out>/train.jsonl

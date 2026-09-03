@@ -1,10 +1,13 @@
-"""Extended wandb logging.
+"""Extended W&B logging.
 
-Every field of RunConfig becomes part of `wandb.config`, so any
-comparison across runs in the wandb UI knows what produced each
-datapoint. The summary dict goes in as flat scalars; the per-row
-dataframe goes in as a sortable Table; low-faithfulness rows go in as a
-separate "hallucinations" table for quick eyeballing.
+Every field of RunConfig becomes part of `wandb.config`. This records the
+runner's configurable subset, not complete model/corpus/prompt provenance.
+The summary dict goes in as flat scalars; the per-row dataframe goes in as a
+sortable Table; low-faithfulness rows go in a separate "hallucinations" table.
+
+RunConfig currently includes generator/judge key fields and per-row data
+can include private context. Do not use real secrets or sensitive corpora
+until this module implements redaction and an explicit no-tracking mode.
 """
 
 from __future__ import annotations

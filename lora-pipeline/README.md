@@ -1,32 +1,71 @@
-# lora-pipeline — своя документация → обученный LoRA-адаптер
+# lora-pipeline — документы → synthetic dataset → LoRA adapter
 
-Одна команда проходит весь путь: берёт папку с документами, строит по ним
-поисковый индекс, генерирует по нему grounded-датасет teacher-моделью и
-обучает LoRA поверх выбранной базовой модели.
+`lora-pipeline` объединяет три независимо отключаемые стадии:
 
-```
-docs/ ──ingest──▶ ChromaDB ──synth──▶ train.jsonl ──train──▶ adapter/final/
+```text
+docs/ → ingest в отдельную ChromaDB → teacher-generated JSONL → LoRA/QLoRA adapter
 ```
 
-## 1. Установка
+Pipeline предназначен для воспроизводимого исследовательского прогона в новом
+`--output-dir`. Он не подключает получившийся adapter к backend автоматически и
+не должен писать поверх tracked `data/`, `lora-train/runs/` или bundled ChromaDB.
+Корневой `runs/` сейчас не игнорируется Git; используйте каталог вне репозитория
+или сначала добавьте осознанное ignore-правило без переписывания tracked history.
+
+## Требования и запуск
+
+Команды выполняются из корня репозитория. Общий `uv.lock` требует Python 3.13.
+Ingest/synth используют embedding и ML-зависимости пакета `rag`; первый запуск
+может скачать модель. Полное обучение рассчитано на Linux/CUDA. На macOS
+`bitsandbytes` training stack не поддерживается текущим lock.
+
+Проверить CLI без запуска pipeline:
 
 ```bash
-git clone <репозиторий>
-cd RAG
-uv sync --package lora-pipeline                  # индекс + генерация датасета
-uv sync --package lora-pipeline --extra train    # то же + стек обучения (CUDA)
+uv run --locked --package lora-pipeline python -m lora_pipeline --help
 ```
 
-Стадии `ingest` и `synth` работают на ноутбуке и не требуют torch. Стадия
-`train` ставится отдельным extra и требует CUDA-машины: `lora-train` тянет
-`bitsandbytes`, которого нет под macOS. Схема «датасет на ноутбуке,
-обучение на GPU-боксе» описана в разделе 6.
+Для полного обучения добавьте optional training extra:
 
-## 2. Куда класть документы
-
-Любая папка с текстовыми файлами, вложенность произвольная:
-
+```bash
+uv run --locked --package lora-pipeline --extra train \
+  python -m lora_pipeline --help
 ```
+
+`uv run` может дополнить общую `.venv` и скачать пакеты. Не используйте
+`uv sync --all-packages --all-groups`: это устанавливает тяжёлый workspace stack.
+
+## Критичное предупреждение о secrets
+
+Сейчас `manifest.json` сериализует `PipelineConfig` через `asdict`, включая
+`teacher_api_key` в открытом виде. Ключ, переданный через CLI, также может быть
+виден в process list и shell history.
+
+Поэтому текущий cloud-key workflow небезопасен. Не передавайте настоящий API key,
+не коммитьте manifest и не запускайте платную генерацию, пока key не вынесен в
+secret store/env и не исключён из сериализации. Безопасный документированный
+вариант — локальный OpenAI-compatible endpoint с фиктивным значением `EMPTY`.
+
+Teacher получает полный plaintext каждого отобранного документа/chunk. Даже при
+безопасной передаче key внешний endpoint раскрывает ему corpus; приватные данные
+отправляйте только в одобренный контур с подходящей retention policy.
+
+## Входные документы
+
+`--docs-dir` обязателен и проверяется даже при `--skip-ingest`. Поиск рекурсивный.
+По умолчанию читаются только `.md`; список расширений задаётся через запятую:
+
+```bash
+--ext md,txt,rst
+```
+
+Путь исходного файла сохраняется в metadata чанка и затем в synthetic rows. Он
+используется при группировке близких distractors и как source для sourced prompt,
+поэтому осмысленная структура каталогов полезна.
+
+Пример:
+
+```text
 my-docs/
 ├── api/
 │   ├── client.md
@@ -35,157 +74,231 @@ my-docs/
     └── quickstart.md
 ```
 
-По умолчанию берутся `.md`. Другие расширения — через `--ext`:
+Pipeline поддерживает текстовые файлы, которые может прочитать текущий loader. Он
+не является PDF/DOCX parser.
+
+## Рекомендуемый smoke с локальным teacher
+
+Сначала запустите малую генерацию без обучения в новом output directory:
 
 ```bash
---ext md,txt,rst
+uv run --locked --package lora-pipeline python -m lora_pipeline \
+  --docs-dir ./my-docs \
+  --output-dir /tmp/rag-lora-smoke \
+  --teacher-api-url http://127.0.0.1:8000/v1 \
+  --teacher-api-key EMPTY \
+  --teacher-model Qwen/Qwen2.5-32B-Instruct-AWQ \
+  --max-chunks 20 \
+  --skip-train
 ```
 
-Требований к структуре нет: путь к файлу попадает в метаданные чанка и
-используется как источник в цитатах и как группа при подборе дистракторов,
-поэтому осмысленные имена папок улучшают качество датасета.
+Если synth включён, preflight до ingest вызывает `models.list()` teacher endpoint.
+Некоторые gateways не перечисляют все модели: отсутствие выбранной модели в
+списке даёт warning, недоступный endpoint — ошибку. `--no-preflight` отключает
+эту раннюю проверку.
 
-## 3. Запуск
+`--max-chunks 20` ограничивает число исходных чанков, но итоговое число строк
+зависит от teacher output, dedup и adversarial fraction. Это всё ещё сетевой и
+потенциально платный вызов, если endpoint не локальный.
 
-Teacher через API (OpenAI или любой совместимый шлюз):
+## Стадии
 
-```bash
-uv run python -m lora_pipeline \
-    --docs-dir ./my-docs \
-    --output-dir runs/my-lora \
-    --teacher-api-url https://api.openai.com/v1 \
-    --teacher-api-key sk-... \
-    --teacher-model gpt-4o-mini
-```
+### 1. Ingest
 
-Teacher локально через vLLM — тот же интерфейс, меняется только URL:
+Текущая последовательность:
 
-```bash
-vllm serve Qwen/Qwen2.5-32B-Instruct-AWQ --port 8000
+1. рекурсивно загрузить файлы с выбранными extensions;
+2. разбить их на чанки (`chunk_size=1000`, `chunk_overlap=200`);
+3. создать embedding через `BAAI/bge-base-en-v1.5` по умолчанию;
+4. записать чанки в `<output-dir>/chromadb`, collection `docs`.
 
-uv run python -m lora_pipeline \
-    --docs-dir ./my-docs \
-    --output-dir runs/my-lora \
-    --teacher-api-url http://localhost:8000/v1 \
-    --teacher-model Qwen/Qwen2.5-32B-Instruct-AWQ
-```
+Если collection уже непуста, обычный повторный запуск переиспользует её целиком и
+не проверяет, соответствует ли она текущим docs/chunk/embed settings.
+`--force-ingest` пересоздаёт collection и уничтожает прежний индекс в этом
+output directory. Не направляйте его на общий или production Chroma path.
 
-**Сначала прогоните смоук на 20 чанках** — увидите качество пар и оцените
-стоимость полного прогона:
+### 2. Synthetic dataset
 
-```bash
-uv run python -m lora_pipeline ... --max-chunks 20 --skip-train
-```
+Teacher по инструкции пытается генерировать grounded Q&A, затем pipeline:
 
-## 4. Что получается
+- дедуплицирует нормализованные вопросы;
+- формирует окно из gold chunk и близких/случайных distractors;
+- перемешивает позицию gold chunk;
+- добавляет adversarial rows без gold context и с отказом;
+- делает seeded shuffle и train/validation split;
+- сохраняет structured `chunks`, а не заранее отрендеренный prompt.
 
-Всё складывается в `--output-dir`:
+Предпочтительная строка имеет поля `question`, `answer`, `chunks`,
+`is_adversarial`, `source`. `lora-train` также продолжает принимать legacy rows из
+`dataset-prep` с плоским полем `context`.
 
-```
-runs/my-lora/
-├── chromadb/               # поисковый индекс по вашим документам
+Groundedness автоматически не проверяется: pipeline валидирует только parseable
+JSON и непустые question/answer. Кроме того, concurrent `as_completed` меняет
+порядок teacher results, temperature по умолчанию `0.7`, а endpoint может быть
+недетерминированным. `seed` контролирует локальные distractor/shuffle/split
+операции, но не гарантирует bitwise-identical dataset.
+
+Если `dataset/train.jsonl` существует, synth переиспользует его без проверки
+параметров и считает только число train rows. `--force-synth` генерирует dataset
+заново и может перезаписать `train.jsonl`/`val.jsonl`.
+
+### 3. Training
+
+`lora-train` загружает base model, применяет PEFT LoRA/QLoRA, форматирует rows
+через prompt contract и сохраняет adapter. Текущие основные defaults:
+
+| Параметр | Default |
+|---|---:|
+| Base model | `Qwen/Qwen2.5-Coder-7B-Instruct` |
+| LoRA | `r=16`, `alpha=32`, `dropout=0.05` |
+| Targets | строка `all-linear` |
+| Epochs | `2` |
+| Batch / accumulation | `1 / 16` |
+| Learning rate | `2e-4` |
+| Max sequence length | `4096` |
+| Optimizer | `paged_adamw_8bit` |
+| Gradient checkpointing | включён |
+| Pipeline tracking | `report_to=none` |
+
+Значение `none` — override именно pipeline. Standalone CLI
+`python -m lora_train` по умолчанию использует `report_to=wandb`; для локального
+запуска без внешнего tracking явно передайте `--report-to none`.
+
+Loss сейчас считается по всей chat sequence, включая system/user tokens, а не
+только по assistant answer. Результат — PEFT adapter и tokenizer files, не merged
+base model.
+
+Training не имеет resume/reuse guard: каждый запуск без `--skip-train` снова
+вызывает trainer и пишет в тот же adapter output. `--force-ingest` и
+`--force-synth` на это не влияют.
+
+## Артефакты
+
+После полного успешного запуска структура в общих чертах такая:
+
+```text
+<output-dir>/
+├── chromadb/                 # отдельный индекс pipeline
 ├── dataset/
-│   ├── train.jsonl         # обучающие примеры
+│   ├── train.jsonl
 │   └── val.jsonl
 ├── adapter/
-│   └── final/              # ← адаптер: сюда указывать vLLM
-│       ├── adapter_model.safetensors
+│   ├── run_config.json
+│   └── final/                # PEFT adapter + tokenizer + contract
 │       └── prompt_contract.json
-├── prompt_contract.json    # формат промпта этого прогона
-└── manifest.json           # чем, из чего и с какими параметрами получено
+├── prompt_contract.json
+└── manifest.json
 ```
 
-Деплой адаптера:
+`manifest.json` пишется только в конце успешного orchestration и содержит stage
+summaries, timestamps, contract и текущий config. Из-за описанной утечки key его
+нельзя считать безопасным provenance artifact с реальными credentials. После
+частичного сбоя manifest может отсутствовать или остаться от предыдущего запуска.
 
-```bash
-vllm serve <базовая-модель> --enable-lora --lora-modules my-lora=runs/my-lora/adapter/final
-```
+Защищайте и не коммитьте весь `<output-dir>`, а не только manifest: `chromadb/` и
+JSONL содержат plaintext корпуса, chunks, ответы и source paths; adapter metadata
+тоже может раскрывать сведения об эксперименте. `.gitignore` не удаляет файлы,
+которые уже отслеживаются Git.
 
-## 5. Контракт промпта — почему это важно
+Всегда храните рядом с экспериментом seed, Git SHA, source corpus revision,
+embedding/chunk settings, endpoint model id и prompt fingerprint — без secrets.
 
-Адаптер валиден **только** в том формате промпта, в котором обучался.
-Поменяли системный промпт, порядок «контекст → вопрос» или способ подачи
-чанков — модель решает задачу, которой не видела, и деградирует молча:
-ничего не падает, просто метрики хуже.
+## Prompt contract
 
-Поэтому формат вынесен в отдельный объект (`prompt-contract`), общий для
-генерации данных, обучения, сервинга и оценки. Он сохраняется рядом с
-весами и имеет отпечаток:
+Доступны два встроенных контракта:
+
+- `grounded` — context без обязательных numbered citations;
+- `sourced` — numbered snippets и ссылки вида `[§N]`.
+
+Можно передать путь к custom JSON через `--contract`. `--context-chunks` по
+умолчанию равен `5`; он влияет и на synthetic context window, и на fingerprint
+контракта, используемого training stage.
 
 ```python
 from prompt_contract import PromptContract
-contract = PromptContract.load("runs/my-lora/adapter/final")
-contract.fingerprint()   # '3f2a...' — сверяйте при сервинге
+
+contract = PromptContract.load("../rag-runs/my-lora/adapter/final")
+print(contract.fingerprint())
 ```
 
-На инференсе передавайте его явно:
+Важное ограничение текущей интеграции: `rag.chains.answer(..., contract=contract)`
+умеет применить contract только при явной передаче, но backend и `eval-runner`
+сейчас его автоматически не загружают и не сверяют с adapter. Файл рядом с весами
+сам по себе не гарантирует prompt compatibility в serving/eval.
 
-```python
-from rag.chains import answer
-answer(llm, question, chunks, contract=contract)
-```
+## Разделение ноутбука и GPU-машины
 
-Встроенных контракта два: `grounded` (по умолчанию — чистый контекст) и
-`sourced` (нумерованные чанки с источниками и обязательными цитатами
-`[§N]`). Свой — JSON-файл, путь передаётся в `--contract`.
-
-`--context-chunks` должен совпадать с `top_k` вашего ретривера: если
-модель училась на 5 чанках, а на инференсе получает 20, распределение
-входа другое.
-
-## 6. Разнести генерацию и обучение
-
-Стадии переиспользуют артефакты, поэтому прогон возобновляется:
+На машине для подготовки данных:
 
 ```bash
-# на ноутбуке — только датасет
-uv run python -m lora_pipeline --docs-dir ./my-docs --output-dir runs/my-lora \
-    --teacher-api-url ... --skip-train
-
-# скопировать runs/my-lora на GPU-бокс, там — только обучение
-uv run python -m lora_pipeline --docs-dir ./my-docs --output-dir runs/my-lora \
-    --skip-ingest --skip-synth
+uv run --locked --package lora-pipeline python -m lora_pipeline \
+  --docs-dir ./my-docs \
+  --output-dir ../rag-runs/my-lora \
+  --teacher-api-url http://127.0.0.1:8000/v1 \
+  --teacher-api-key EMPTY \
+  --skip-train
 ```
 
-Повторный запуск ничего не пересчитывает: индекс и датасет
-переиспользуются. Пересобрать принудительно — `--force-ingest`,
-`--force-synth`.
-
-## 7. Основные параметры
-
-| Флаг | Дефолт | Зачем |
-|---|---|---|
-| `--context-chunks` | 5 | чанков в одном примере; ставьте равным `top_k` ретривера |
-| `--qa-per-chunk` | 3 | пар с одного чанка — прямо влияет на размер датасета и стоимость |
-| `--max-chunks` | 0 (все) | ограничение для смоук-прогона |
-| `--adversarial-fraction` | 0.20 | доля примеров с нерелевантным контекстом и ответом-отказом |
-| `--base-model` | Qwen2.5-Coder-7B-Instruct | что дообучаем |
-| `--lora-targets` | `all-linear` | работает на любой архитектуре; можно список модулей через запятую |
-| `--qlora` | выкл. | базовые веса в 4 бита, если не хватает VRAM |
-| `--embedding-model` | BAAI/bge-base-en-v1.5 | эмбеддер индекса |
-| `--report-to` | none | `wandb` для логирования обучения |
-
-Полный список — `--help`.
-
-## 8. Если что-то не так
-
-**`no documents found under ...`** — не тот `--ext` или не та папка;
-поиск рекурсивный, проверьте расширения файлов.
-
-**`teacher endpoint unreachable`** — preflight проверяет teacher до
-индексации, чтобы не потратить час на эмбеддинги впустую. Проверьте URL
-(он должен заканчиваться на `/v1`) и ключ.
-
-**Индексация «ничего не делает»** — коллекция уже непуста и
-переиспользуется намеренно. Другой набор документов → `--force-ingest`,
-иначе два корпуса смешаются в одном индексе.
-
-**Мало примеров на выходе** — teacher возвращает меньше пар на коротких
-чанках. Поднимите `--qa-per-chunk`, снизьте `--chunk-size` или ослабьте
-фильтр `min_chunk_chars`.
-
-## 9. Тесты
+После копирования **всего** output directory и доступной docs directory на
+Linux/CUDA машину:
 
 ```bash
-uv run --with pytest python -m pytest prompt-contract/tests dataset-synth/tests lora-pipeline/tests -q
+uv run --locked --package lora-pipeline --extra train \
+  python -m lora_pipeline \
+  --docs-dir ./my-docs \
+  --output-dir ../rag-runs/my-lora \
+  --skip-ingest \
+  --skip-synth
 ```
+
+При `--skip-synth` teacher URL не требуется. При `--skip-ingest --skip-synth`
+pipeline всё равно требует существующий `--docs-dir` и проверяет наличие
+`dataset/train.jsonl` перед training.
+
+## Параметры управления
+
+| Флаг | Default | Назначение |
+|---|---:|---|
+| `--context-chunks` | `5` | Чанков в synthetic/training context; согласуйте с serving `top_k` |
+| `--qa-per-chunk` | `3` | Запрошенных Q&A на исходный chunk |
+| `--max-chunks` | `0` | `0` означает все подходящие chunks |
+| `--adversarial-fraction` | `0.20` | Доля добавляемых adversarial rows относительно normal rows |
+| `--teacher-workers` | `8` | Параллельные teacher calls |
+| `--seed` | `42` | Локальные distractor/shuffle/split; не делает teacher output детерминированным |
+| `--qlora` | выключен | 4-bit base weights для уменьшения VRAM |
+| `--trust-remote-code` | выключен | Разрешает исполнение model-repository Python code; только для доверенного pinned revision |
+| `--report-to` | `none` | `none`, `wandb` или `tensorboard` для training |
+| `--skip-*` | выключены | Явно пропустить отдельную стадию |
+| `--force-ingest` | выключен | Пересоздать output collection |
+| `--force-synth` | выключен | Перегенерировать output dataset |
+
+Полный и актуальный список — в `python -m lora_pipeline --help` и
+`lora_pipeline/__main__.py`.
+
+## Deployment
+
+Adapter можно объявить в vLLM под alias:
+
+```bash
+vllm serve Qwen/Qwen2.5-Coder-7B-Instruct \
+  --enable-lora \
+  --lora-modules my-lora=../rag-runs/my-lora/adapter/final
+```
+
+После этого backend/eval должны обращаться к alias `my-lora` и использовать тот
+же prompt contract. Текущий compose vLLM не поднимает; endpoint настраивается
+отдельно.
+
+## Проверки
+
+Unit tests для prompt contract, synth и orchestration:
+
+```bash
+uv run --locked --package lora-pipeline --with pytest \
+  python -m pytest prompt-contract/tests dataset-synth/tests lora-pipeline/tests -q
+```
+
+Эти tests не подтверждают реальный teacher endpoint, скачивание embedder,
+качество synthetic rows, CUDA training или serving compatibility. Для них нужен
+отдельный согласованный smoke в новом output directory; paid API/GPU/W&B запуск
+без явной задачи не выполняйте.

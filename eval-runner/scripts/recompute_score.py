@@ -11,9 +11,10 @@ re-derives rag_score under several weight schemes WITHOUT re-running the
 (expensive) eval, and prints base-vs-v2 pairwise winners.
 
 Usage:
-    cd eval-runner
-    uv run python scripts/recompute_score.py
-    uv run python scripts/recompute_score.py --logs-dir logs --weights 0.6 0.2 0.2
+    uv run --locked --package eval-runner python \\
+        eval-runner/scripts/recompute_score.py
+    uv run --locked --package eval-runner python \\
+        eval-runner/scripts/recompute_score.py --weights 0.6 0.2 0.2
 """
 
 from __future__ import annotations

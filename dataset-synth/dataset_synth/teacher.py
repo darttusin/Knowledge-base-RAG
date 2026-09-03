@@ -1,9 +1,10 @@
-"""Teacher LLM client — generates grounded Q&A from a single chunk.
+"""Teacher LLM client — requests chunk-based Q&A from a model.
 
 Works against any OpenAI-compatible endpoint (OpenAI cloud or a vLLM
-server). The prompt forces the teacher to answer USING ONLY the chunk,
-so generated pairs have high context-recall by construction — the exact
-property that the StackOverflow-derived v1 dataset lacked.
+server). The prompt asks the teacher to answer using only the supplied chunk.
+The parser accepts expected dict entries and filters empty string values, but it
+does not fully validate types or verify that an answer is supported by the chunk;
+quality needs separate evaluation.
 """
 
 from __future__ import annotations
@@ -94,7 +95,7 @@ class Teacher:
         self.n = config.n_qa_per_chunk
 
     def generate(self, chunk_text: str, max_retries: int = 4) -> list[QAPair]:
-        """Generate grounded Q&A for one chunk. Returns [] on persistent failure."""
+        """Request Q&A for one chunk; return [] on persistent failure."""
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": USER_TEMPLATE.format(chunk=chunk_text, n=self.n)},

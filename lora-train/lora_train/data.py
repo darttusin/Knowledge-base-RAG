@@ -9,10 +9,11 @@ Input (from `dataset-synth` or `dataset-prep`):
         "is_adversarial": false    // true for synthetic refusal examples
     }
 
-The chat messages are built by the `PromptContract` in `DataConfig`, which
-is the same object serving and evaluation use. Storing chunks structurally
-rather than pre-rendered means one dataset can be trained under different
-contracts without being regenerated.
+The chat messages are built by the `PromptContract` in `DataConfig`.
+`rag.chains` can use the same contract when it is passed explicitly, but
+the current backend and eval-runner do not load it automatically. Storing
+chunks structurally rather than pre-rendered means one dataset can be
+trained under different contracts without being regenerated.
 
 Output rows fed to SFTTrainer:
     {"text": "<|im_start|>system\\n...<|im_end|>\\n<|im_start|>user\\n...
@@ -34,7 +35,8 @@ def _build_messages(example: dict, contract: PromptContract) -> dict:
 
     Rows from `dataset-synth` carry `chunks` (structured, contract-agnostic);
     older rows from `dataset-prep` carry a flat `context` string. Both are
-    rendered through the same contract so training and serving agree.
+    rendered through the selected training contract. Serving agrees only
+    when it explicitly loads and passes that same contract.
     """
     chunks = example.get("chunks")
     if chunks:

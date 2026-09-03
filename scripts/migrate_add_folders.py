@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""
-Миграция: добавление таблицы folders и поля folder_id в sources
+"""Legacy one-off DDL for an older folder schema.
+
+There is no Alembic migration ledger or downgrade, and current ORM/startup code is
+the schema source of truth. This script mutates the database loaded from
+``backend/.env``; compare every statement with ``backend/db.py`` and back up the
+target before considering it. Do not run on shared/prod data by default.
 """
 import sys
 import asyncio

@@ -1,24 +1,23 @@
 """Head-to-head smoke test: base model vs LoRA adapter through vLLM.
 
 Sends the same questions to both `--base-model` and `--lora-model` over
-the vLLM OpenAI-compatible endpoint, prints answers side by side. Used
-to quickly confirm a freshly-deployed LoRA adapter actually loads and
-behaves differently from the base model.
+the vLLM OpenAI-compatible endpoint and prints answers side by side. It checks
+that both requested model IDs are served and exercises them; similar or different
+answers do not by themselves prove adapter loading, grounding or quality.
 
-Three test cases, designed to surface different aspects of the LoRA:
-  1. RELEVANT context     — both should answer; LoRA should look more
-                             concise / formatted per training prompt.
-  2. IRRELEVANT context   — LoRA should *refuse* (the adversarial
-                             examples from dataset-prep trained it for
-                             this); base will likely hallucinate.
-  3. NO context           — both fall back on parametric knowledge;
-                             LoRA may still echo trained style.
+Three probes compare observed behavior without assuming the outcome:
+  1. RELEVANT context     — inspect correctness, grounding and style.
+  2. IRRELEVANT context   — check whether each model follows the refusal rule.
+  3. NO usable context    — check the same rule without supporting evidence;
+                             a parametric answer would violate this prompt.
 
-Run on the vast.ai server:
-    python scripts/smoke_test.py
+Run from the workspace root against a local endpoint:
+    uv run --locked --package lora-train python \\
+        lora-train/scripts/smoke_test.py
 
-Run from the Mac against a remote endpoint:
-    python scripts/smoke_test.py --base-url http://193.222.57.16:44090/v1
+Run through a local tunnel to a remote endpoint:
+    uv run --locked --package lora-train python \\
+        lora-train/scripts/smoke_test.py --base-url http://127.0.0.1:18000/v1
 """
 
 from __future__ import annotations
@@ -42,7 +41,7 @@ SYSTEM_PROMPT = (
 
 TESTS: list[dict] = [
     {
-        "label": "1. RELEVANT context — both should answer correctly",
+        "label": "1. RELEVANT context — inspect correctness and grounding",
         "context": (
             "torch.cuda.is_available()\n"
             "Return a bool indicating if CUDA is currently available.\n"
@@ -56,7 +55,7 @@ TESTS: list[dict] = [
         "question": "How can I check if CUDA is available before moving my tensor to GPU?",
     },
     {
-        "label": "2. IRRELEVANT context — LoRA should refuse, base will hallucinate",
+        "label": "2. IRRELEVANT context — check refusal compliance",
         "context": (
             "torch.nn.functional.gelu(input, approximate='none')\n"
             "Applies the Gaussian Error Linear Units function.\n"
@@ -67,7 +66,7 @@ TESTS: list[dict] = [
         "question": "How do I save and load a PyTorch model checkpoint to disk?",
     },
     {
-        "label": "3. NO context — both fall back on parametric knowledge",
+        "label": "3. NO usable context — check refusal compliance",
         "context": "(no relevant context provided)",
         "question": "What is the difference between torch.no_grad() and torch.inference_mode()?",
     },

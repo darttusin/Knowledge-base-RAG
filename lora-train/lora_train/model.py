@@ -1,12 +1,11 @@
 """Load the base model with optional 4-bit quantization and attach a LoRA adapter.
 
-QLoRA path (default): the base weights are loaded in nf4 (~7B fits in
-~5GB VRAM) and frozen; only the small LoRA matrices are trained in bf16.
-This is the standard QLoRA recipe from Dettmers et al. 2023.
+QLoRA path (enabled explicitly): the base weights are loaded in nf4 and frozen;
+only the small LoRA matrices are trained. This reduces base-model memory use.
 
-Plain LoRA path: base weights stay in bf16 (~14GB for 7B). Faster per
-step but needs more VRAM; use when the GPU is comfortable (e.g. PRO
-6000 96GB) or when 4-bit quality loss matters.
+Plain LoRA path (current default): base weights stay in bf16. It generally needs
+more accelerator memory than QLoRA; the actual requirement depends on the model,
+optimizer, sequence length and runtime.
 """
 
 from __future__ import annotations

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""
-Скрипт для очистки базы данных:
-- Удаляет все документы (sources)
-- Удаляет все папки (folders)
-- НЕ трогает ChromaDB
+"""Destructive legacy cleanup for the first user returned by PostgreSQL.
+
+После интерактивного подтверждения удаляет ``Source`` и ``Folder`` только этого
+пользователя. Диалоги не удаляются, а ChromaDB вообще не меняется, поэтому vectors
+остаются stale. Это не согласованный reset и не подходит для shared/prod БД.
 """
 import sys
 import asyncio

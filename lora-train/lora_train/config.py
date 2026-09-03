@@ -1,7 +1,8 @@
 """Configuration dataclasses for LoRA training.
 
-All hyperparameters live here so the experiment is fully described by
-a single object that can be logged to wandb / serialized to disk.
+Training knobs live here so they can be logged to W&B or serialized to
+disk. Dataset/model revisions, environment details and Git state still
+need separate provenance.
 """
 
 from __future__ import annotations

@@ -123,7 +123,7 @@ def _maybe_add_ragas(per_row: pd.DataFrame, cfg: RunConfig) -> pd.DataFrame:
             "ground_truth": per_row["gold"],
         }
     )
-    logger.info("invoking RAGAS subprocess venv (this builds a fresh env first)")
+    logger.info("invoking RAGAS subprocess in an isolated, reusable venv")
     ragas_df = run_ragas_evaluation(
         df_prepared=ragas_input,
         api_url=cfg.judge_api_url,
@@ -145,7 +145,12 @@ def _maybe_add_ragas(per_row: pd.DataFrame, cfg: RunConfig) -> pd.DataFrame:
 
 
 def run_evaluation(cfg: RunConfig) -> EvalResult:
-    """Full evaluation pipeline. Returns an EvalResult, no side effects."""
+    """Run the full evaluation pipeline and return its in-memory results.
+
+    This can download models, open the configured Chroma index, call generator
+    and judge endpoints, and create or refresh the local RAGAS environment.
+    W&B logging is performed separately by the CLI.
+    """
     logger.info("starting eval run: {n} samples", n=cfg.eval_sample_size)
     eval_df = load_eval_dataset(cfg)
     pipeline = build_pipeline(cfg)

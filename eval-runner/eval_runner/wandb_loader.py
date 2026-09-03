@@ -1,4 +1,4 @@
-"""Pull eval-runner results from wandb for cross-run comparison.
+"""Pull eval-runner results from W&B for cross-run comparison.
 
 Wraps `wandb.Api` to flatten finished runs into a pandas DataFrame
 where each row is one run, `cfg.*` columns hold original RunConfig
@@ -9,8 +9,12 @@ Typical use from a notebook:
 
     from eval_runner.wandb_loader import fetch_runs_as_df, has_tag
 
-    df = fetch_runs_as_df("pytorch-rag-eval", entity="ooovotetoda")
+    df = fetch_runs_as_df("pytorch-rag-eval", entity="<your-entity>")
     phase1 = df[df["tags"].apply(lambda ts: has_tag(ts, "phase:1"))]
+
+These functions query the remote W&B API under the caller's authenticated
+account. Returned config and summaries can contain the sensitive fields
+documented in ``eval-runner/README.md``.
 """
 
 from __future__ import annotations

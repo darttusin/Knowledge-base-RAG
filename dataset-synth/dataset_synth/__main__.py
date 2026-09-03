@@ -2,22 +2,19 @@
 
 Teacher-agnostic — point --teacher-api-url at OpenAI or a vLLM server.
 
-OpenAI teacher:
-    cd dataset-synth
-    uv run python -m dataset_synth \\
-        --teacher-api-url https://api.openai.com/v1 \\
-        --teacher-api-key sk-... \\
-        --teacher-model gpt-4o-mini \\
-        --out ../data/sft_synth
-
-vLLM teacher (e.g. a 32B on vast.ai):
-    uv run python -m dataset_synth \\
+Local vLLM teacher:
+    uv run --locked --package dataset-synth python -m dataset_synth \\
         --teacher-api-url http://localhost:18000/v1 \\
+        --teacher-api-key EMPTY \\
         --teacher-model Qwen/Qwen2.5-32B-Instruct-AWQ \\
-        --out ../data/sft_synth
+        --out /tmp/rag-sft-synth
 
-Dry run on 10 chunks first to sanity-check quality/cost:
-    uv run python -m dataset_synth ... --max-chunks 10
+Small smoke on 10 chunks to inspect quality and limit cost/output:
+    uv run --locked --package dataset-synth python -m dataset_synth ... \\
+        --max-chunks 10
+
+This still calls the configured endpoint and writes a dataset; it is not an
+offline dry run.
 """
 
 from __future__ import annotations
@@ -38,14 +35,21 @@ DEFAULT_OUT = PROJECT_ROOT / "data" / "sft_synth"
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Generate grounded synthetic Q&A from doc chunks")
+    p = argparse.ArgumentParser(
+        description="Generate teacher-produced synthetic Q&A from document chunks"
+    )
 
     # chunks
     p.add_argument("--chroma-path", type=str, default=str(DEFAULT_CHROMA))
     p.add_argument("--collection", type=str, default="docs_fast")
     p.add_argument("--min-chunk-chars", type=int, default=300)
     p.add_argument("--max-chunk-chars", type=int, default=4000)
-    p.add_argument("--max-chunks", type=int, default=0, help="0 = all; small value for dry run")
+    p.add_argument(
+        "--max-chunks",
+        type=int,
+        default=0,
+        help="0 = all; a small value limits teacher calls and output",
+    )
 
     # teacher
     p.add_argument("--teacher-api-url", type=str, required=True)

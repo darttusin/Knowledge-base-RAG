@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""
-Script to add Full-Text Search indexes to the sources table.
-This enables fast searching in document names and content.
+"""Legacy one-off PostgreSQL FTS DDL helper.
+
+Current ``backend.db.init_db`` already owns equivalent tsvector columns, triggers,
+backfill and indexes. This script mutates the database selected by backend
+settings, drops/recreates triggers and has no migration ledger or downgrade.
+Use only after comparing its SQL with ``backend/db.py`` and backing up the target.
 """
 
 import asyncio

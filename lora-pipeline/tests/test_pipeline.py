@@ -1,8 +1,8 @@
-"""Orchestration tests: stage order, resume behaviour, run provenance.
+"""Orchestration tests: stage order, artifact reuse and recorded metadata.
 
 The stages themselves are replaced with fakes — what matters here is that
-the pipeline runs them in the right order, honours skips, and records what
-it did well enough to reproduce the run.
+the pipeline runs them in the right order, honours skips, and records selected
+config/contract/stage fields. These tests do not prove full reproducibility.
 """
 
 from __future__ import annotations

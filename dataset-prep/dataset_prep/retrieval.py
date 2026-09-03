@@ -1,14 +1,16 @@
 """Retrieve PyTorch documentation context for each Q&A pair.
 
-Loads the same ChromaDB index used by the production RAG module
-(`data/chromadb/`, collection `docs_fast`) and attaches top-k retrieved
-chunks to each pair as `context`. This converts plain SFT data
-(question → answer) into RAG-aware SFT data (context + question → answer),
-eliminating the train/inference mismatch.
+Loads the same default ChromaDB path and collection as the current backend
+(`data/chromadb/`, `docs_fast`) and attaches top-k retrieved chunks to each
+pair as `context`. This converts plain SFT data (question → answer) into a
+legacy context + question → answer format and reduces one source of
+train/inference mismatch; it does not guarantee serving prompt compatibility.
 
-Also produces adversarial examples: ~15% of pairs get unrelated context
-with a "cannot answer" target answer — this teaches the model to refuse
-when the context lacks the answer instead of hallucinating from memory.
+It can also produce adversarial examples: the configured fraction of pairs gets
+random intended-negative context with a "cannot answer" target. Sampling does not
+exclude chunks related to the question, so negative relevance is not guaranteed.
+These rows are intended to train refusal behavior; the pipeline does not verify
+that a trained model learns it.
 """
 
 from __future__ import annotations
@@ -127,14 +129,15 @@ def enrich_with_context(pairs: list[Pair], ctx: RetrievalContext) -> list[Pair]:
 
 
 def add_adversarial_examples(pairs: list[Pair], ctx: RetrievalContext) -> list[Pair]:
-    """Append synthetic refusal examples with unrelated context.
+    """Append synthetic refusal examples with random intended-negative context.
 
     For ~adversarial_fraction of the existing pairs we create a new pair where:
     - the question is reused (so the natural question distribution is preserved),
     - the context is replaced with `top_k` random chunks from the index,
     - the answer is a refusal phrase ("cannot answer from this context").
 
-    The combined list is shuffled so adversarial examples aren't clustered.
+    Random chunks are not checked for relevance and can accidentally contain an
+    answer. The combined list is shuffled so labelled rows are not clustered.
     """
     rng = random.Random(ctx.config.seed)
     n_adversarial = int(len(pairs) * ctx.config.adversarial_fraction)

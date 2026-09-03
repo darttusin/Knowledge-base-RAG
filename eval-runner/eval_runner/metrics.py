@@ -3,8 +3,7 @@
 The per-row lexical/semantic metrics live in rag/rag/metrics.py and are
 called directly inside the inference loop. Here we only define:
 
-- composite RAG score (weighted mix of RAGAS metrics, mirroring the
-  formula from notebooks/BaseLine.ipynb)
+- composite RAG score (configurable weighted mix of RAGAS metrics)
 - aggregate summary (means, win/lose counts, latency stats)
 """
 
@@ -25,9 +24,10 @@ def composite_rag_score(
 ) -> float:
     """Weighted RAGAS-score with configurable weights.
 
-    Default weights come from BaseLine.ipynb (0.4 / 0.4 / 0.2). NaN
-    components are treated as zero so a single failed RAGAS call
-    doesn't sink the whole score silently.
+    Current defaults are faithfulness-priority (0.6 / 0.2 / 0.2).
+    BaseLine.ipynb and the historical defense deck used 0.4 / 0.4 / 0.2.
+    NaN components are treated as zero so a failed component remains
+    visible in the reduced score.
     """
     def _safe(x: float) -> float:
         return 0.0 if pd.isna(x) else float(x)

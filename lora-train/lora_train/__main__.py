@@ -1,15 +1,17 @@
 """CLI entrypoint for LoRA training.
 
-Usage on the vast.ai server (after `uv sync`):
+Usage from the workspace root on a suitable Linux/CUDA host:
 
-    cd lora-train
-    uv run python -m lora_train \\
-        --train-jsonl ../data/sft/train.jsonl \\
-        --val-jsonl ../data/sft/val.jsonl \\
-        --output-dir runs/qwen25-coder-7b-r16
+    uv run --locked --package lora-train python -m lora_train \\
+        --train-jsonl /tmp/rag-sft/train.jsonl \\
+        --val-jsonl /tmp/rag-sft/val.jsonl \\
+        --output-dir /tmp/qwen25-coder-7b-r16 \\
+        --report-to none
 
+The example assumes ``dataset-prep`` has already written ``/tmp/rag-sft``.
 Override anything via flags; everything else falls back to dataclass
-defaults defined in `config.py`.
+defaults defined in `config.py`. The standalone CLI defaults to W&B reporting;
+pass ``--report-to none`` unless an external tracking upload is intentional.
 """
 
 from __future__ import annotations

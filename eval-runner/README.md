@@ -1,228 +1,241 @@
-# eval-runner — параметры конфигурации
+# eval-runner — воспроизводимая оценка RAG
 
-Все настройки одного прогона объявлены в [`eval_runner/config.py`](eval_runner/config.py)
-в dataclass `RunConfig`. Любое поле задаётся одним из трёх способов:
+`eval-runner` сравнивает RAG-ответ и ответ той же generator-модели без контекста
+на выборке StackOverflow, считает локальные метрики, при необходимости запускает
+RAGAS и отправляет результаты в Weights & Biases (W&B).
 
-1. **CLI-флаг**: `--retriever-type rerank --top-k 5`
-2. **JSON-пресет(ы)**: `--config configs/_base.json --config configs/lora-rerank-k5.json`
-   (поля файла совпадают с именами полей `RunConfig`; ключи, начинающиеся
-   с `_`, считаются комментариями и игнорируются)
-3. **Комбинация**: JSON задаёт базу, CLI перекрывает отдельные поля
+Это исследовательский инструмент, а не часть HTTP runtime. Он использует текущие
+retriever, prompts и LLM client из пакета `rag`, открывает существующую ChromaDB
+только для поиска и обращается к внешнему OpenAI-compatible endpoint.
 
-**Порядок применения** (last wins): defaults → каждый `--config` файл по очереди → CLI-флаги.
+> Важно: текущий CLI **всегда вызывает W&B** и передаёт туда полный
+> `RunConfig`, per-row вопросы, эталонные и сгенерированные ответы, а также
+> retrieved context. Кроме того, `llm_api_key` и `judge_api_key` входят в
+> сериализуемый config. Не запускайте этот код с реальными cloud API keys или
+> приватным корпусом, пока в коде не реализованы redaction и явный режим без W&B.
+> Для локального vLLM используйте значение `EMPTY`.
 
-`asdict(RunConfig)` целиком уходит в `wandb.config`, поэтому любое сравнение
-runs в wandb знает, чем они отличаются.
+## Минимальный локальный smoke
 
-## Готовые пресеты — папка [`configs/`](configs/)
-
-12 файлов под рекомендованную матрицу экспериментов. Используются
-послойно: общая база `_base.json` + конкретный delta-файл эксперимента.
-
-| Файл | Phase | Что делает |
-|---|---|---|
-| `_base.json` | — | Общие настройки (chroma path, embed model, eval seed/sample). Loaded first. |
-| `base-vanilla-k5.json` | 1.1 | Baseline: base LLM + vanilla retrieval, k=5 |
-| `base-rerank-k5.json` | 1.2 | Base LLM + cross-encoder rerank |
-| `base-qt-k5.json` | 1.3 | Base LLM + query rewriting + HyDE + rerank |
-| `lora-rerank-k5.json` | 1.4 | **Main**: LoRA-finetuned + rerank (best retriever assumed) |
-| `lora-rerank-k3.json` | 2 | top_k sweep, k=3 |
-| `lora-rerank-k10.json` | 2 | top_k sweep, k=10 |
-| `lora-rerank-k5-fetch10.json` | 2 | fetch_k sweep, 10 candidates |
-| `lora-rerank-k5-fetch50.json` | 2 | fetch_k sweep, 50 candidates |
-| `lora-rerank-k5-temp0.json` | 2 | temperature=0 (deterministic) |
-| `lora-rerank-k5-seed43.json` | 3 | Stability: eval_seed=43 |
-| `lora-rerank-k5-seed44.json` | 3 | Stability: eval_seed=44 |
-
-URLs (`llm_api_url`, `judge_api_url`) намеренно отсутствуют в пресетах —
-задайте их через CLI под текущий vast.ai инстанс:
+Команды ниже выполняются из корня репозитория. Общий `uv.lock` требует Python
+3.13, хотя package manifest допускает более старую версию.
 
 ```bash
-python -m eval_runner \
-    --config configs/_base.json \
-    --config configs/lora-rerank-k5.json \
-    --llm-api-url http://193.222.57.16:44090/v1 \
-    --judge-api-url http://193.222.57.16:44090/v1
+WANDB_MODE=offline uv run --locked --package eval-runner python -m eval_runner \
+  --config eval-runner/configs/_base.json \
+  --config eval-runner/configs/base-vanilla-k5.json \
+  --llm-api-url http://127.0.0.1:8000/v1 \
+  --eval-sample-size 1 \
+  --no-semantic \
+  --no-ragas
 ```
 
-Чтобы прогнать всю матрицу из 12 runs последовательно:
+Даже этот smoke открывает Chroma, загружает query embedder и делает два LLM calls:
+RAG и pure baseline. `WANDB_MODE=offline` не отменяет запись чувствительных данных
+в локальные W&B-артефакты. Отдельного `--no-wandb` сейчас нет.
+
+Первый запуск может скачать embedding model; reranker скачивается только для
+`rerank`/`query_transform`, а semantic model — если не указан `--no-semantic`.
+Не меняйте bundled `data/chromadb`: eval открывает коллекцию `docs_fast`, и query
+embedder обязан совпадать с тем, которым индекс был построен.
+
+Полный список параметров:
 
 ```bash
-for c in configs/base-vanilla-k5 \
-         configs/base-rerank-k5 \
-         configs/base-qt-k5 \
-         configs/lora-rerank-k5 \
-         configs/lora-rerank-k3 \
-         configs/lora-rerank-k10 \
-         configs/lora-rerank-k5-fetch10 \
-         configs/lora-rerank-k5-fetch50 \
-         configs/lora-rerank-k5-temp0 \
-         configs/lora-rerank-k5-seed43 \
-         configs/lora-rerank-k5-seed44; do
-    python -m eval_runner \
-        --config configs/_base.json \
-        --config "$c.json" \
-        --llm-api-url http://YOUR_IP:PORT/v1 \
-        --judge-api-url http://YOUR_IP:PORT/v1
-done
+uv run --locked --package eval-runner python -m eval_runner --help
 ```
 
-RAGAS venv создаётся один раз (первый run ~+3 мин) и переиспользуется
-во всех последующих — общее время матрицы ~3 часа.
+## Как собирается конфигурация
 
----
+Источник истины — `eval_runner/config.py`, dataclass `RunConfig`.
 
-## Retriever
+Приоритет значений, от меньшего к большему:
 
-Параметры извлечения чанков из ChromaDB.
-
-| Параметр | Дефолт | Тип | Что значит |
-|---|---|---|---|
-| `retriever_type` | `vanilla` | `vanilla` / `rerank` / `query_transform` | Стратегия извлечения |
-| `top_k` | `5` | int | Сколько чанков попадает в финальный context |
-| `fetch_k` | `20` | int | Кандидатов из ChromaDB до reranker (только для `rerank` / `query_transform`) |
-| `embedding_model` | `BAAI/bge-base-en-v1.5` | str | Модель для эмбеддинга запроса и чанков |
-| `rerank_model` | `BAAI/bge-reranker-base` | str | Cross-encoder для переранжирования |
-| `chroma_path` | `data/chromadb` | str | Путь к локальному ChromaDB |
-| `chroma_collection` | `docs_fast` | str | Имя коллекции внутри ChromaDB |
-| `device` | `auto` | `auto` / `cpu` / `cuda` / `mps` | На чём гонять embedder и reranker |
-
-⚠️ Если меняете `embedding_model` — нужно **перестроить ChromaDB тем же эмбеддером**,
-иначе query-вектор окажется в другом пространстве и retrieval сломается.
-
----
-
-## Generator LLM
-
-Главная точка для сравнения **base vs LoRA** — меняется `llm_model` (alias `--lora-modules`
-для LoRA-варианта vs имя базовой модели).
-
-| Параметр | Дефолт | Что меняется |
-|---|---|---|
-| `llm_model` | `Qwen/Qwen2.5-Coder-7B-Instruct` | **Ключевой**: имя модели как её знает vLLM |
-| `llm_api_url` | пусто (обязательно!) | URL вашего vLLM endpoint, напр. `http://193.222.57.16:44090/v1` |
-| `llm_api_key` | `EMPTY` | Для vLLM не валидируется; для cloud — реальный ключ |
-| `llm_temperature` | `0.1` | Сэмплинг. `0.0` = детерминированно |
-| `llm_max_tokens` | `1024` | Максимальная длина ответа |
-| `llm_timeout` | `60.0` | Сколько секунд ждать ответа |
-
----
-
-## Judge LLM (для RAGAS)
-
-| Параметр | Дефолт | Что меняется |
-|---|---|---|
-| `judge_model` | `gpt-4o-mini` | Модель-судья |
-| `judge_api_url` | пусто | URL судьи. Свой vLLM, OpenAI, OpenRouter и т.д. |
-| `judge_api_key` | `EMPTY` | Через CLI не задаётся — только через JSON-пресет (для cloud-судей) |
-
-⚠️ Если judge == generator (одна и та же модель), RAGAS-метрики будут
-**biased**: модель оценивает свои же ответы. Годится для относительного
-сравнения (LoRA-вариант vs base), но не как абсолютная оценка.
-
----
-
-## Eval dataset
-
-| Параметр | Дефолт | Что меняется |
-|---|---|---|
-| `eval_csv_path` | `data/stackoverflow-pytorch.csv` | Откуда брать вопросы и эталонные ответы |
-| `eval_sample_size` | `100` | Сколько примеров оценивать |
-| `eval_min_answer_score` | `1` | Минимальный `answer_score` StackOverflow для фильтра |
-| `eval_seed` | `42` | Сид сэмплинга — фиксируйте, иначе разные runs берут разные вопросы |
-
----
-
-## Семантическая метрика
-
-| Параметр | Дефолт | Что меняется |
-|---|---|---|
-| `eval_embedding_model` | `Snowflake/snowflake-arctic-embed-m` | Отдельный эмбеддер для `cosine(answer_rag, answer_pure)`. Намеренно ОТЛИЧНЫЙ от retriever — чтобы метрика не оценивала «сама себя» |
-
----
-
-## Что считать
-
-| Параметр | Дефолт | CLI-флаг для выключения |
-|---|---|---|
-| `compute_lexical` | `True` | `--no-lexical` |
-| `compute_semantic` | `True` | `--no-semantic` |
-| `compute_ragas` | `True` | `--no-ragas` |
-
-Выключение `compute_ragas` экономит ~3 мин на setup изолированного venv + время на запросы судье.
-
----
-
-## Веса композитного RAG-score
-
-Композитный балл, который агрегирует RAGAS-метрики в одно число:
-
-```
-rag_score = w_faithfulness × faithfulness
-          + w_answer_relevancy × answer_relevancy
-          + w_context_recall × context_recall
+```text
+defaults → JSON overlays в порядке CLI → явные CLI-флаги
 ```
 
-| Параметр | Дефолт | Источник дефолта |
+`--config` повторяемый. Ключи JSON совпадают с полями `RunConfig`; ключи,
+начинающиеся с `_`, игнорируются и могут служить комментариями. Неизвестное поле
+завершает запуск с ошибкой. CLI покрывает не все поля: например,
+`judge_api_key` и веса composite score можно изменить только через JSON overlay.
+
+### Готовые presets
+
+В `configs/` сейчас 16 JSON-файлов: два общих overlay и 14 run-specific presets.
+
+| Группа | Файлы | Назначение |
 |---|---|---|
-| `rag_score_w_faithfulness` | `0.4` | `notebooks/BaseLine.ipynb` |
-| `rag_score_w_answer_relevancy` | `0.4` | то же |
-| `rag_score_w_context_recall` | `0.2` | то же |
+| Общая база | `_base.json` | Corpus/index, sample, seed, judge model и W&B project |
+| Judge overlay | `_judge_qwen32b.json` | Отдельная Qwen 32B judge model; URL всё равно задаётся при запуске |
+| Base | `base-{vanilla,rerank,qt}-k5.json` | Базовая generator-модель с тремя retrieval strategies |
+| LoRA v1 | `lora-rerank-k5.json` и варианты `k3`, `k10`, `fetch10`, `fetch50`, `temp0`, `seed43`, `seed44` | Основной v1 run и sensitivity/stability варианты |
+| LoRA v2 | `v2-{vanilla,rerank,qt}-k5.json` | Synth-v2 adapter alias с тремя retrieval strategies |
 
----
+Имена `pytorch-rag` и `synth-v2` в presets — aliases, которые должен реально
+обслуживать запущенный vLLM через `--lora-modules`. Поле `metadata.lora_adapter`
+само по себе адаптер не загружает.
 
-## Tracking (wandb)
+Пример с отдельным локальным judge endpoint:
 
-| Параметр | Дефолт | Что меняется |
-|---|---|---|
-| `wandb_project` | `pytorch-rag-eval` | Имя проекта в wandb |
-| `wandb_run_name` | `None` (auto) | Имя конкретного run'а. Если `None` — генерируется по шаблону `{model}_{retr}_k{k}_n{n}` |
-| `wandb_tags` | `[]` | Теги для фильтрации в UI: `--wandb-tag lora --wandb-tag rerank` (флаг повторяемый) |
-| `wandb_notes` | пусто | Длинное текстовое описание |
-| `wandb_api_key` | — | Только из CLI/env, в config не сохраняется |
+```bash
+WANDB_MODE=offline uv run --locked --package eval-runner python -m eval_runner \
+  --config eval-runner/configs/_base.json \
+  --config eval-runner/configs/_judge_qwen32b.json \
+  --config eval-runner/configs/v2-rerank-k5.json \
+  --llm-api-url http://127.0.0.1:8000/v1 \
+  --judge-api-url http://127.0.0.1:8001/v1
+```
 
----
+Это всё ещё полный 100-row run, а не smoke: offline mode лишь запрещает сетевую
+синхронизацию W&B и оставляет локальные артефакты с context/results и config.
 
-## Метаданные эксперимента
+Не запускайте всю матрицу вслепую: это сетевой, compute-heavy и потенциально
+платный процесс. Сначала проверьте один preset на малой выборке отдельным JSON
+overlay, фиксируя endpoint model, corpus/index provenance и Git SHA.
 
-| Параметр | Дефолт | Что меняется |
-|---|---|---|
-| `description` | пусто | Короткое описание для wandb.config |
-| `metadata` | `{}` | Произвольный JSON: путь к LoRA-адаптеру, git SHA, hyperparams тренировки и т.д. — `--metadata-json '{"lora":"runs/v1/final"}'` |
+## Параметры `RunConfig`
 
----
+### Retrieval
 
-## Оси сравнения для типовых экспериментов
+| Поле | Default | Смысл |
+|---|---:|---|
+| `retriever_type` | `vanilla` | `vanilla`, `rerank` или `query_transform` |
+| `top_k` | `5` | Чанков в итоговом context |
+| `fetch_k` | `20` | Dense candidates до reranker; не используется в `vanilla` |
+| `embedding_model` | `BAAI/bge-base-en-v1.5` | Query embedder; также передаётся RAGAS embeddings и должен быть совместим с индексом |
+| `rerank_model` | `BAAI/bge-reranker-base` | Cross-encoder для `rerank` и `query_transform` |
+| `chroma_path` | `data/chromadb` | Persistent Chroma directory |
+| `chroma_collection` | `docs_fast` | Имя существующей коллекции |
+| `device` | `auto` | `auto`, `cpu`, `cuda` или `mps` |
 
-| Что сравниваете | Меняйте | Не меняйте |
-|---|---|---|
-| **Base vs LoRA** | `llm_model` | retriever, top_k, judge, eval_seed |
-| **Vanilla vs Rerank vs Query Transform** | `retriever_type` | llm_model, top_k, judge, eval_seed |
-| **Чувствительность к top_k** | `top_k` (3, 5, 10) | retriever_type, llm_model |
-| **Чувствительность к fetch_k** | `fetch_k` (10, 20, 50) | retriever_type=rerank, top_k |
-| **Другой embedder** | `embedding_model` + перестроить ChromaDB | judge, llm_model |
-| **Другой reranker** | `rerank_model` | retriever_type=rerank, top_k |
-| **Температура** | `llm_temperature` | всё остальное |
-| **Размер ответа** | `llm_max_tokens` | всё остальное |
-| **Объективность судьи** | `judge_model`, `judge_api_url` | llm_model, retriever |
-| **Стабильность по выборке** | `eval_seed` (несколько прогонов с разными сидами) | всё остальное |
+`query_transform` делает LLM rewrite и HyDE, затем rerank. Поэтому он добавляет
+LLM calls, latency и стоимость относительно обычного dense retrieval.
 
----
+### Generator
 
-## Чего **нельзя** менять через `RunConfig` (захардкожено в коде)
+| Поле | Default | Смысл |
+|---|---:|---|
+| `llm_model` | `Qwen/Qwen2.5-Coder-7B-Instruct` | Model id или vLLM LoRA alias |
+| `llm_api_url` | пусто | Обязательный OpenAI-compatible `/v1` base URL |
+| `llm_api_key` | `EMPTY` | API key; сейчас небезопасно хранить реальное значение в config |
+| `llm_temperature` | `0.1` | Sampling temperature |
+| `llm_max_tokens` | `1024` | Максимум output tokens |
+| `llm_timeout` | `60.0` | Timeout одного generator request, секунд |
 
-Эти точки фиксированы в исходниках `rag/`. Чтобы их менять — нужна правка кода.
+Один и тот же client используется для RAG и pure baseline. При сравнении Base и
+LoRA меняйте только `llm_model`/server state и фиксируйте остальные параметры.
 
-| Параметр | Где сейчас | Когда понадобится |
-|---|---|---|
-| **System prompt** | `rag/rag/prompts.py:5` — `SYSTEM_INSTRUCTIONS` | A/B-тестировать разные стили инструкций |
-| **Answer format prompt** | `rag/rag/prompts.py:13` — `ANSWER_INSTRUCTIONS` | Менять формат с цитированием/без, длину |
-| **Context truncation** | `rag/rag/prompts.py:24` — `render_context(max_chars=14000)` | Упираетесь в context window |
-| **HyDE prompt** | `rag/rag/retriever.py:86` — `HYDE_PROMPT` | Менять стратегию query transform |
-| **Query rewrite prompt** | `rag/rag/retriever.py:79` — `REWRITE_PROMPT` | То же |
-| **RAGAS metrics list** | `rag/rag/evaluation.py:95` — `_RAGAS_SCRIPT` | Добавить `context_precision`, `answer_correctness` |
-| **RAGAS judge timeout** | `rag/rag/evaluation.py` — `RunConfig(timeout=180)` | Если ваш судья медленный |
-| **RAGAS concurrency** | `rag/rag/evaluation.py` — `max_workers=4` | Параллелить больше/меньше |
+### Judge и RAGAS
 
-Если на каком-то из этих понадобится конфигурируемость — выносим в `RunConfig`
-отдельным полем.
+| Поле | Default | Смысл |
+|---|---:|---|
+| `judge_model` | `gpt-4o-mini` | Model id judge |
+| `judge_api_url` | пусто | Если пусто, RAGAS фактически пропускается |
+| `judge_api_key` | `EMPTY` | Доступен только через JSON; см. предупреждение о secrets |
+| `compute_ragas` | `true` | Отключается флагом `--no-ragas` |
+
+RAGAS считает `faithfulness`, `answer_relevancy` и `context_recall`. Judge,
+совпадающий с generator или близкий к нему, создаёт self-evaluation bias; для
+финальных выводов нужен отдельно зафиксированный judge и human calibration.
+
+RAGAS выполняется в `./ragas_venv` относительно текущего рабочего каталога.
+Код переиспользует исправное окружение, а неисправное удаляет и создаёт заново,
+устанавливая сетевые зависимости без lock. Judge key передаётся subprocess через
+argv и может быть виден в process list. Поэтому cloud-key path в текущем виде
+небезопасен; используйте локальный endpoint с `EMPTY` либо сначала исправьте
+secret handling.
+
+До завершения run в `ragas_venv/temp_input.json` и `temp_output.json` остаются
+plaintext question, gold, context и answers. Эти файлы не удаляются автоматически;
+не направляйте RAGAS на приватные данные без отдельной политики хранения/очистки.
+
+### Dataset и локальные метрики
+
+| Поле | Default | Смысл |
+|---|---:|---|
+| `eval_csv_path` | `data/stackoverflow-pytorch.csv` | CSV с обязательными `question_body`, `answer_body`, `answer_score` |
+| `eval_sample_size` | `100` | Размер deterministic sample |
+| `eval_min_answer_score` | `1` | Нижняя граница StackOverflow answer score |
+| `eval_seed` | `42` | Seed выборки |
+| `eval_embedding_model` | `Snowflake/snowflake-arctic-embed-m` | Отдельная модель semantic metric |
+| `compute_lexical` | `true` | SQuAD precision/recall/F1 против gold; `--no-lexical` |
+| `compute_semantic` | `true` | Cosine между RAG и pure answers; `--no-semantic` |
+
+`answer_similarity` не измеряет correctness относительно gold: это сходство
+RAG-ответа и ответа без context. При ошибке отдельного RAG/pure call runner пишет
+warning и подставляет пустой ответ, поэтому итоговые метрики нужно сопоставлять с
+логами ошибок, а не интерпретировать изолированно.
+
+Изменение `embedding_model` одновременно меняет retrieval и RAGAS embeddings —
+это уже две оси эксперимента. RAGAS averages считают каждый metric по доступным
+non-NaN значениям независимо; effective N не попадает в summary. При частичных
+failures composite может смешать компоненты с разным coverage, поэтому сверяйте
+NaN counts/per-row table и не сравнивайте только headline score.
+
+### Composite score
+
+```text
+rag_score = 0.6 × faithfulness
+          + 0.2 × answer_relevancy
+          + 0.2 × context_recall
+```
+
+Текущие defaults дают приоритет groundedness. Исторический notebook/deck считал
+`0.4/0.4/0.2`; сравнивать числа из разных схем напрямую нельзя. Код не проверяет,
+что пользовательские веса нормированы. Для отчёта показывайте и исходные RAGAS
+компоненты, и sensitivity analysis.
+
+Пересчитать composite score по сохранённым логам без повторного eval:
+
+```bash
+uv run --locked --package eval-runner python eval-runner/scripts/recompute_score.py \
+  --logs-dir eval-runner/logs
+```
+
+Скрипт ищет последнюю строку `eval done. summary: {...}` в каждом `*.log` и
+сравнивает заранее заданные base/v2 пары по нескольким схемам весов.
+
+## W&B и артефакты
+
+CLI после eval безусловно вызывает `log_to_wandb` и записывает:
+
+- все поля `RunConfig` через `asdict`;
+- scalar summary;
+- полную per-row table;
+- строки с `faithfulness < 0.5`;
+- случаи, где pure F1 превышает RAG F1 более чем на `0.1`.
+
+`--wandb-api-key` относится только к авторизации W&B и не входит в `RunConfig`,
+но значение видно в argv/shell history и `wandb.login` может сохранить локальную
+авторизацию. Generator/judge keys входят в config. Не сохраняйте secrets в presets.
+
+В репозитории уже отслеживаются `eval-runner/logs/*.log` и многочисленные файлы
+`wandb/`; среди них могут быть payloads, machine paths и per-row context. Добавление
+пути в `.gitignore` не удаляет уже tracked artifacts. Не копируйте их в новые
+отчёты и не выполняйте history cleanup без отдельной согласованной задачи.
+
+Runner не пишет отдельный canonical result JSON/CSV. Для programmatic использования
+вызывайте `run_evaluation(cfg)`: он возвращает `EvalResult(config, per_row,
+summary)` без W&B side effect; tracking вызывается отдельно только CLI-слоем.
+
+## Правила корректного сравнения
+
+Для каждой серии фиксируйте corpus и Chroma collection, embedding/chunk versions,
+sample и seed, generator parameters, prompt, judge, Git SHA и endpoint model. В
+одной серии меняйте одну ось. Не выдавайте один seed или self-judge score за
+статистически устойчивый результат.
+
+Текущий `eval-runner` вызывает legacy prompt path из `rag.chains.answer` и не
+загружает `prompt_contract.json` LoRA-адаптера. Наличие контракта рядом с весами не
+гарантирует его применение в eval; совместимость prompt нужно проверять вручную
+или сначала интегрировать contract в runner.
+
+## Проверка изменений
+
+Отдельного test suite у `eval-runner` сейчас нет. Для безопасной локальной
+проверки документации/config-кода используйте targeted lint/import checks; полный
+eval требует Chroma data, моделей, внешнего LLM endpoint и W&B behavior.
+
+Не считайте run успешным только по exit code: проверьте warnings, число реально
+оценённых строк, наличие всех ожидаемых metric columns и provenance конфигурации.

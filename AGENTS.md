@@ -62,7 +62,7 @@ docs → Chroma
   └─ dataset-synth: teacher LLM → structured chunks/distractors/refusals
        └─ lora-train: LoRA/QLoRA adapter + prompt_contract.json
 
-lora-pipeline: resumable ingest → synth → train
+lora-pipeline: ingest/synth reuse → training reruns unless skipped
 eval-runner: base/LoRA/RAG metrics + optional RAGAS judge + W&B
 ```
 
@@ -77,10 +77,10 @@ eval-runner: base/LoRA/RAG metrics + optional RAGAS judge + W&B
 | `rag/rag/` | `documents.py`, `vectorstore.py`, `retriever.py`, `chains.py`, `llm.py` |
 | `frontend/` | Next.js App Router; `app/`, `components/`, `hooks/`, `lib/api/`, `lib/store/` |
 | `code-executor/` | Изолированное исполнение Python; `app.py`, `tests/test_executor.py` |
-| `prompt-contract/` | Версионируемый prompt format/fingerprint для synth/train/serve |
+| `prompt-contract/` | Версионируемый prompt format/fingerprint для train и явного inference |
 | `dataset-prep/` | Legacy подготовка SFT из StackOverflow и retrieval context |
-| `dataset-synth/` | Teacher-generated grounded Q&A, distractors, adversarial rows |
-| `lora-pipeline/` | Resumable docs-to-adapter CLI и manifest |
+| `dataset-synth/` | Teacher-generated Q&A, distractors, adversarial rows; groundedness не проверяется |
+| `lora-pipeline/` | Docs-to-adapter CLI; ingest/synth reuse, training reruns; manifest |
 | `lora-train/` | Transformers/PEFT/TRL; реальное обучение только Linux/CUDA |
 | `eval-runner/` | Base/LoRA/RAG eval, RAGAS, W&B |
 | `outlier-detection/` | TF-IDF + OneClassSVM classifier, scripts/tests/models |
@@ -94,19 +94,16 @@ eval-runner: base/LoRA/RAG metrics + optional RAGAS judge + W&B
 
 ## 4. Что считать источником истины
 
-При конфликте: запрос пользователя/ближайший `AGENTS.md` → исполняемый код и типы →
-актуальные тесты/config → README/snapshots. Проверенные расхождения:
+При конфликте: запрос/ближайший `AGENTS.md` → код и типы → тесты/config → docs.
+Guides синхронизированы на 2026-09-03, но код остаётся источником истины.
 
-- Корневые `README.md`/`SUMMARY.md` описывают старый или целевой дизайн: BM25/RRF,
-  `/ask`, общий `/health`, Prometheus/Grafana/Jaeger сейчас не реализованы.
-- `backend/openapi.json` и `.yaml` устарели; canonical API — routers и live
-  `/api/docs`.
-- `backend/README_RAG_INTEGRATION.md` обещает удалённый `:8000/forward` fallback,
-  которого в текущем message controller нет.
-- `frontend/CLAUDE.md` полезен как intent, но структура/именование расходятся с
-  кодом; `frontend/FOLDER_SYSTEM.md` в значительной части aspirational.
-- Веса и defaults eval берите из `eval_runner/config.py`, не из README.
-- `.env.example` неполон и содержит имена, которые backend Settings не читает.
+- `backend/openapi.json`/`.yaml` сгенерированы из `app.openapi()`; обновляйте оба
+  после route/schema change. Схема не отражает реальные SSE/download media types.
+- `notebooks/defense_deck.md` — исторический отчёт с legacy-весами метрик, не
+  описание текущего runtime или production policy.
+- Веса и defaults eval берите из `eval_runner/config.py`; README объясняет их, но
+  config остаётся canonical.
+- `.env.example` содержит только Compose inputs; прочие defaults берите из Settings.
 
 Меняя фактическое поведение, обновите связанную документацию в том же diff.
 
@@ -223,16 +220,20 @@ bundled Chroma, не смешивать несовместимые embedding/chu
 считать shared retrieval tenant-isolated и не считать training contract
 подключённым к serving/eval.
 
-`dataset-synth` создаёт structured chunks: normal row содержит gold, adversarial —
-нет; ids/order/seed сохраняются. `dataset-prep` пишет legacy flat context;
+В `dataset-synth` normal row содержит gold, adversarial — нет. JSONL сохраняет
+chunk ids/order, но не seed; pipeline manifest хранит config. `dataset-prep` пишет
+legacy flat context;
 `lora-train` читает оба формата. Не удаляйте legacy reader без миграции. В PEFT
 `"all-linear"` остаётся строкой; loss сейчас по полной sequence; output — adapter,
 не merged model.
 
 Eval config precedence: `defaults → configs по порядку → CLI`. Для сравнения
 фиксируйте corpus/index/sample/seed/generator params/prompt/judge и меняйте одну
-ось. Full synth/eval/RAGAS/train требует сети/API/GPU, может быть платным и пишет
-W&B/artifacts. Без явного запроса — unit tests и малый offline smoke в новом output.
+ось. Full synth/eval вызывает teacher/generator/judge endpoints и может быть
+платным; RAGAS управляет отдельным env. Training требует GPU/model files;
+standalone CLI по умолчанию пишет в W&B, pipeline — нет. Full jobs создают
+артефакты. Без явного запроса — лишь unit tests/offline smoke без LLM/GPU в новом
+output.
 
 ## 10. Code execution — security boundary
 
@@ -271,9 +272,9 @@ adapter/store меняются вместе с backend; auth только localS
 
 ```bash
 uv --no-cache lock --check
-uv run --locked ruff check <changed-python-paths>
-uv run --locked black --check <changed-python-paths>
-uv run --locked pyright <changed-python-paths>
+uv run --locked --group dev ruff check <changed-python-paths>
+uv run --locked --group dev black --check <changed-python-paths>
+uv run --locked --group dev pyright <changed-python-paths>
 git diff --check
 ```
 
@@ -333,7 +334,8 @@ DB↔Chroma и executor negative cases.
 - `data/chromadb/**` — tracked mutable SQLite/vector index;
 - `data/dataset/**`, `data/stackoverflow-pytorch.csv` и `data/sft_synth/**`;
 - `backend/models/*.joblib`, `outlier-detection/models`/`eval_results`;
-- `lora-train/runs/**`, `wandb/**`, `eval-runner/logs/**`, `ragas_venv/**`;
+- `lora-train/runs/**`, `wandb/**`, `eval-runner/logs/**`, `ragas_venv/**` — могут
+  содержать prompts, contexts, host paths и другие приватные данные;
 - `.venv`, `.next`, `*.tsbuildinfo`, caches, notebook output, `smoke_test.log`;
 - `backend/openapi.*` без осознанной регенерации.
 
@@ -363,16 +365,16 @@ corpus/index provenance, prompt fingerprint и manifest.
    DB↔vector upload/delete/move/folder-delete расходятся.
 2. Backend: FTS `AND ... OR ...` может обходить ownership; soft-deleted JWT жив;
    outlier-off ломает RAG init; cwd paths несовместимы.
-3. SSE показывает deltas до citation remap и complete до commit; blocking LLM/
-   retrieval/`time.sleep` находятся в async flow.
+3. SSE показывает deltas до citation remap и complete до commit; grouped citations
+   могут remap'иться дважды; blocking LLM/retrieval/`time.sleep` есть в async flow.
 4. Docker отправляет большой repo/secrets в context/image, dependency build
    неполон; executor isolation и service URL зависят от dev details.
 5. Frontend folder scope/upload/rename/delete/download и ряд auth flows неполны;
    code-render validators/integrity/stop не образуют полную security boundary.
 6. Tracked Chroma/data/default ML outputs легко мутировать; pipeline/eval могут
    записать API keys в manifest/W&B.
-7. OpenAPI/README/folder docs/scripts/parser/bot и tests имеют drift; CI/Alembic/
-   frontend tests отсутствуют. Сначала сверяйте код и воспроизводите.
+7. OpenAPI имеет gaps для SSE/download media types; legacy scripts/parser/bot и
+   tests drift'ят. CI/Alembic/frontend tests отсутствуют.
 
 ## 16. Definition of Done
 

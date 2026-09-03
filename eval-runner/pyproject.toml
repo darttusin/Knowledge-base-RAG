@@ -2,10 +2,10 @@
 name = "eval-runner"
 version = "0.1.0"
 requires-python = ">=3.12"
-# Reuses the production rag/ module (workspace dep) so retriever logic,
+# Reuses the runtime rag/ module (workspace dep) so retriever logic,
 # chains, prompts, and the RAGAS subprocess venv setup don't get
 # duplicated. Adds wandb tracking + an end-to-end runner that loops
-# over an eval split and logs a fully-described experiment per run.
+# over an eval split. RunConfig alone is not complete experiment provenance.
 dependencies = [
     "rag",
     "wandb>=0.18.0,<1.0",

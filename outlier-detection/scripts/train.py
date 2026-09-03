@@ -1,12 +1,17 @@
-"""
-Обучение TopicClassifier на вопросах StackOverflow по PyTorch.
+"""Обучение TopicClassifier на вопросах StackOverflow по PyTorch.
 
-Запуск:
-    cd outlier-detection
-    uv run python scripts/train.py --csv /path/to/stackoverflow-pytorch.csv
+Предполагаемая форма запуска из корня workspace:
+    uv run --locked --package outlier-detection python \\
+        outlier-detection/scripts/train.py \\
+        --csv data/stackoverflow-pytorch.csv \\
+        --output /tmp/pytorch_topic_classifier.joblib
 
-Результат:
-    outlier-detection/models/pytorch_topic_classifier.joblib
+В clean environment команда сейчас не является рабочим baseline: package manifest
+не перечисляет pandas, а скрипт использует stale top-level import
+``from topic_classifier`` вместо установленного package path. Сначала исправьте
+import/dependencies либо воспроизведите окружение осознанно. Default output указывает
+на tracked model и перезаписывается; всегда задавайте новый temporary/ignored
+``--output``. Joblib-файл не хранит полный provenance корпуса, split и версий.
 """
 
 from __future__ import annotations

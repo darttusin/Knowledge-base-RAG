@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
-"""
-Скрипт для загрузки всех документов из data/dataset в базу с воспроизведением структуры папок
+"""Legacy folder importer with mixed API/direct-DB writes.
+
+It selects the first user, assumes the fixed password ``password``, creates folders
+through backend HTTP, inserts sources directly in PostgreSQL and calls the absent
+``localhost:8000/embed/document`` endpoint. Failed embedding still leaves rows to
+be committed; partial folder creation is not rolled back, and a root-file branch
+can reference an unbound folder-path variable. Do not use as a current loader.
 """
 import sys
 import asyncio

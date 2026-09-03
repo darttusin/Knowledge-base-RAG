@@ -2,8 +2,9 @@
 
 Reads the raw StackOverflow CSV, cleans HTML, filters, deduplicates,
 splits, retrieves PyTorch documentation context for each question, and
-injects adversarial refusal examples. Writes train/val JSONL files
-ready for RAG-aware SFT.
+adds adversarial refusal-target examples. Writes the legacy context-enriched
+train/val JSONL format consumed by the current training reader; serving prompt
+compatibility still needs separate contract handling.
 
 Output schema (one JSON object per line):
     {

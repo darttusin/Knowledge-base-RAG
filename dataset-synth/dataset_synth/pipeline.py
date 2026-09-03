@@ -35,7 +35,7 @@ from dataset_synth.chunks import Chunk, load_chunks
 from dataset_synth.config import SynthConfig
 from dataset_synth.teacher import Teacher
 
-# Single source of truth, shared with training and serving.
+# Refusal text is sourced from the versioned prompt-contract package.
 ADVERSARIAL_ANSWERS = DEFAULT_REFUSALS
 
 _NORM_RE = re.compile(r"[^a-z0-9\s]+")

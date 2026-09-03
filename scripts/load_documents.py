@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""
-Скрипт для загрузки всех документов из data/dataset в базу как источники
+"""Legacy flat importer; not compatible with the current end-to-end upload flow.
+
+It selects the first database user, inserts ``data/dataset`` files directly into
+PostgreSQL and calls the absent ``localhost:8000/embed/document`` API. Rows are
+still committed when embedding fails, filenames are deduplicated without folder
+scope, and no DB↔Chroma transaction exists. Do not use it for current imports.
 """
 import sys
 import asyncio

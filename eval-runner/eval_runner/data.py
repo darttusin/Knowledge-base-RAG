@@ -1,7 +1,8 @@
 """Load the evaluation split.
 
-Lifted from notebooks/BaseLine.ipynb (cells 42-43) so the eval split
-is reproducible: same source CSV, same filter, same random seed.
+Recreates the sampling procedure from historical ``notebooks/BaseLine.ipynb``
+(cells 42-43). The selected rows repeat only when the CSV contents/order,
+filter, sample size, pandas behavior and random seed remain compatible.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ RAW_COLUMNS = ("question_body", "answer_body", "answer_score")
 def load_eval_dataset(cfg: RunConfig) -> pd.DataFrame:
     """Return a `pd.DataFrame` with columns `question`, `answer`.
 
-    Steps mirror the production notebook:
+    Steps mirror the historical baseline notebook:
       1. read stackoverflow CSV
       2. rename to canonical `question` / `answer`
       3. drop rows with missing fields

@@ -3,8 +3,9 @@
 Позитивный класс для метрик детекции — «outlier» (вопрос не по теме).
 
 Eval-набор:
-  - in-topic: отложенные PyTorch-вопросы из CSV (тот же train_test_split
-    с тем же random_state, что в scripts/train.py, → модель их не видела)
+  - in-topic: часть PyTorch-вопросов из CSV, восстановленная по default
+    ``test_size=0.2`` и ``random_state=42`` scripts/train.py; это не доказывает,
+    что конкретная загруженная модель их не видела, если она обучалась иначе
   - off-topic: встроенный размеченный набор из 90 вопросов в трёх корзинах
     сложности (easy: бытовые темы; medium: программирование без ML;
     hard: соседние ML-фреймворки — TensorFlow/Keras/JAX/sklearn/XGBoost)
@@ -12,12 +13,20 @@ Eval-набор:
 Считает: precision/recall/F1 (outlier), PR-AUC, ROC-AUC, FPR,
 inlier acceptance, detection rate по корзинам. Рисует PR-кривую,
 ROC-кривую, confusion matrix и бар-чарт по корзинам; сохраняет PNG
-локально и логирует всё в wandb.
+локально и, если не указан ``--no-wandb``, отправляет metrics, figures и примеры
+ошибок в W&B.
 
-Запуск:
-    python scripts/evaluate.py \
-        --csv ../data/stackoverflow-pytorch.csv \
-        --model models/pytorch_topic_classifier.joblib
+Локальный пример из корня workspace:
+    uv run --locked --package outlier-detection python \\
+        outlier-detection/scripts/evaluate.py \\
+        --csv data/stackoverflow-pytorch.csv \\
+        --model outlier-detection/models/pytorch_topic_classifier.joblib \\
+        --out /tmp/outlier-eval \\
+        --no-wandb
+
+Текущий package manifest не перечисляет pandas, matplotlib и W&B, используемые
+этим скриптом. Default ``--out`` указывает на tracked results и перезаписывается.
+До исправления manifest команда зависит от уже наполненной общей ``.venv``.
 """
 
 from __future__ import annotations

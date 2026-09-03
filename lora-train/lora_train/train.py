@@ -6,18 +6,17 @@ Composes the pieces: load model+tokenizer → attach LoRA → build datasets
 NOTE on loss masking: we train on the full sequence (loss on system +
 user + assistant tokens), not just the assistant turn. Earlier versions
 used TRL's DataCollatorForCompletionOnlyLM but it was removed in TRL
-0.19+. Full-sequence loss is suboptimal but still trains correctly —
-most of the gradient signal comes from the answer tokens anyway. A
-future fix is to use SFTConfig(assistant_only_loss=True) once the
-Qwen2.5 chat template is confirmed to ship with `{% generation %}`
-markers.
+0.19+. This changes the optimization objective relative to assistant-only
+loss, and its effect has not been isolated here. A possible future path is
+`SFTConfig(assistant_only_loss=True)` after confirming that the selected chat
+template provides the required generation mask.
 
 The output `output_dir` will contain the LoRA adapter (not the merged
 base model). To deploy in vLLM:
 
     vllm serve Qwen/Qwen2.5-Coder-7B-Instruct \\
       --enable-lora \\
-      --lora-modules pytorch-rag=<output_dir>
+      --lora-modules pytorch-rag=<output_dir>/final
 """
 
 from __future__ import annotations
@@ -111,7 +110,7 @@ def run_training(cfg: LoraTrainConfig) -> None:
     tokenizer.save_pretrained(final_dir)
 
     # The adapter is only valid under the prompt format it was trained on —
-    # ship that format with the weights so serving can verify the match.
+    # ship that format with the weights so a serving integration can verify it.
     contract_path = cfg.data.contract.save(final_dir)
     logger.info(
         "training done. adapter saved → {path} (contract {c}={fp})",

@@ -1,8 +1,9 @@
 """One config object describing a full documents → adapter run.
 
-Everything a run needs lives here so the whole experiment is reproducible
-from a single serialized object, and so `manifest.json` in the output
-directory fully explains how an adapter was produced.
+Most run parameters live here for reproducibility. `manifest.json` also
+serializes this object, including `teacher_api_key`; do not use a real key
+until manifest writing redacts secrets. External model/corpus revisions and
+Git state still need to be recorded separately.
 """
 
 from __future__ import annotations
@@ -17,8 +18,9 @@ from prompt_contract import GROUNDED_CONTRACT, PromptContract
 class PipelineConfig:
     """Inputs and knobs for `run_pipeline`.
 
-    Only `docs_dir` and `teacher_api_url` are genuinely required; every
-    other field has a default that produces a sane small run.
+    `docs_dir` and `output_dir` are required constructor arguments.
+    `teacher_api_url` is additionally required unless synth is skipped;
+    the remaining fields have defaults.
     """
 
     # === input / output ===

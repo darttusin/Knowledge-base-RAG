@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""
-Скрипт для создания тестового пользователя в БД
+"""Legacy local helper that creates or reuses one fixed demo account.
+
+It loads ``backend/.env``, writes directly to the configured database and prints
+the fixed development credentials. Use only with a disposable local database;
+this is not registration, secret provisioning or a production bootstrap path.
 """
 import sys
 import os

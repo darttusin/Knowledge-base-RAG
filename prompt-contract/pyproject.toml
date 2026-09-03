@@ -1,8 +1,8 @@
 [project]
 name = "prompt-contract"
 version = "0.1.0"
-# Deliberately stdlib-only and 3.12-compatible: every stage depends on this
-# package, including `lora-train` which is installed on bare GPU boxes.
+# Deliberately stdlib-only and standalone-compatible with Python 3.12. The root
+# uv workspace and its canonical lock currently require Python 3.13.
 requires-python = ">=3.12"
 dependencies = []
 

@@ -33,7 +33,9 @@ name_match OR content_match` может раскрывать чужие content 
 
 При contract change меняйте schema/router/controller/tests и соответствующие
 frontend transport types, adapters, stores. FastAPI error shape — `detail`.
-OpenAPI snapshots устарели; регенерируйте их только из `app.openapi()` по задаче.
+OpenAPI snapshots синхронизированы с `app.openapi()` на 2026-09-03; при изменении
+routes/schemas регенерируйте оба snapshot без запуска lifespan или реальных
+подключений. Live `/api/docs` остаётся runtime-проверкой.
 
 ## Message/RAG flow
 

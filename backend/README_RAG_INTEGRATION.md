@@ -1,324 +1,445 @@
-# RAG Integration Guide
+# Backend / RAG integration
 
-This document explains how the RAG (Retrieval-Augmented Generation) and Outlier Detection modules are integrated into the backend API.
+Этот документ описывает фактическую интеграцию FastAPI backend с PostgreSQL,
+локальным RAG-пакетом, ChromaDB, классификатором тематики и сервисом исполнения
+кода. Источник истины для поведения — `app.py`, `settings.py`, `api/**`,
+`services/**`, `db.py` и пакет `../rag/rag/**`. Снимки `openapi.json` и
+`openapi.yaml` должны генерироваться из `app.openapi()` после изменения маршрутов
+или Pydantic-моделей.
 
-## Architecture
+## Архитектура
 
-The backend now includes:
-- **RAG Service**: Local RAG system for answering questions with context retrieval
-- **Outlier Detection**: Topic classifier to filter off-topic questions
-- **Fallback**: External RAG API fallback if local RAG fails
-
-## Components
-
-### 1. RAG Service (`services/rag_service.py`)
-
-Provides:
-- `RagService` class for managing RAG models
-- `answer_question()` - Main method for answering questions
-- `retrieve_chunks()` - Retrieval with configurable strategies
-- `check_topic()` - Outlier detection
-
-**Retrieval Strategies:**
-- `basic` - Simple vector similarity (~5ms)
-- `rerank` - With cross-encoder reranking (~50ms) **[DEFAULT]**
-- `query_transform` - Query rewriting + HyDE (~200ms)
-
-### 2. Settings (`settings.py`)
-
-New configuration options:
-
-```python
-# RAG Settings
-RAG_ENABLED=true                          # Enable/disable local RAG
-RAG_EMBEDDING_MODEL=BAAI/bge-base-en-v1.5 # Embedding model
-RAG_RERANK_MODEL=BAAI/bge-reranker-base   # Reranker model
-RAG_LLM_MODEL=Qwen/Qwen2.5-Coder-7B-Instruct  # Generation model
-RAG_LLM_API_URL=http://localhost:8003/v1  # LLM API endpoint
-RAG_LLM_API_KEY=                          # LLM API key (if needed)
-RAG_TOP_K=5                               # Number of retrieved chunks
-RAG_CHUNK_SIZE=1000                       # Document chunk size
-RAG_CHUNK_OVERLAP=200                     # Overlap between chunks
-RAG_CHROMA_PATH=../data/chromadb          # ChromaDB storage path
-RAG_CHROMA_COLLECTION=docs_fast           # Collection name
-
-# Outlier Detection Settings
-OUTLIER_DETECTION_ENABLED=true                    # Enable topic checking
-OUTLIER_CLASSIFIER_PATH=./models/pytorch_classifier.joblib  # Classifier model
-OUTLIER_REJECT_OFF_TOPIC=false                    # Auto-reject off-topic questions
-
-# Code Executor Settings
-CODE_EXECUTOR_URL=http://localhost:8002/execute   # Code executor endpoint
+```text
+Browser / Next.js :3000
+  └─ JSON или SSE + Bearer JWT
+       └─ FastAPI backend :8001
+            ├─ PostgreSQL :5432
+            │    users, dialogues, messages, folders, sources, FTS
+            ├─ in-process RAG
+            │    ├─ SentenceTransformer embeddings
+            │    ├─ persistent Chroma collection
+            │    ├─ CrossEncoder reranker
+            │    ├─ topic classifier
+            │    └─ внешний OpenAI-compatible LLM endpoint
+            └─ HTTP → code-executor :8002
 ```
 
-### 3. Application Lifespan (`app.py`)
+`docker-compose.yml` запускает PostgreSQL, backend, code-executor и frontend. Он
+не запускает vLLM, Ollama или иной LLM server. Backend не проксирует запросы на
+старый `http://localhost:8000/forward`: если RAG выключен или singleton не
+инициализирован, message API отвечает `503`.
 
-Models are loaded during startup:
+## Основные модули
 
-```python
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup - Initialize RAG service
-    init_rag_service(...)
+| Путь | Ответственность |
+|---|---|
+| `app.py` | FastAPI app, CORS, lifespan и подключение routers |
+| `settings.py` | Backend env/config; создаёт `settings` при импорте |
+| `db.py` | async SQLAlchemy engine, ORM и startup DDL для PostgreSQL FTS |
+| `auth.py` | Bearer JWT и получение текущего `user_id` |
+| `api/<domain>/router.py` | HTTP contract и dependency injection |
+| `api/<domain>/controller.py` | Use-case orchestration и DB operations |
+| `api/message/controller.py` | RAG, citations, SSE, history и code execution |
+| `api/message_citation_utils.py` | Перенумерация ссылок вида `[§N]` |
+| `services/rag_service.py` | Singleton-обёртка над `rag` и topic classifier |
+| `services/title_service.py` | Короткий заголовок первого сообщения |
+| `../rag/rag/documents.py` | Загрузка, chunking и dedup документов |
+| `../rag/rag/vectorstore.py` | Persistent Chroma, embeddings и vector search |
+| `../rag/rag/retriever.py` | `basic`, `rerank`, `query_transform` retrieval |
+| `../rag/rag/chains.py` | Обычная и streaming генерация ответа |
+| `../code-executor/app.py` | RestrictedPython worker с отдельным процессом |
 
-    yield
+## Startup и shutdown
 
-    # Shutdown - Cleanup resources
-    shutdown_rag_service()
+`settings = Settings()` выполняется при импорте backend-модулей. Поэтому до
+импорта `app` должны быть заданы обязательные PostgreSQL-поля и
+`JWT_SECRET_KEY`.
+
+Lifespan в `app.py` выполняет следующий порядок:
+
+1. отклоняет известные небезопасные значения `JWT_SECRET_KEY`;
+2. вызывает `init_db()`;
+3. если `RAG_ENABLED=true`, синхронно создаёт LLM client, embedding model,
+   reranker, Chroma collection и topic classifier;
+4. при ошибке инициализации RAG пишет warning и оставляет остальной API
+   запущенным;
+5. при shutdown закрывает SQLAlchemy engine и сбрасывает RAG singleton.
+
+Следствия:
+
+- первый запуск может скачивать модели SentenceTransformer/CrossEncoder и быть
+  долгим;
+- недоступный RAG не останавливает приложение, но `/api/message` и
+  `/api/message/stream` возвращают `503` при обращении к singleton;
+- backend не имеет собственного `/health`; `/health` есть только у
+  code-executor;
+- тесты через ASGI transport обычно обходят lifespan и не подтверждают реальный
+  startup PostgreSQL/RAG.
+
+## Конфигурация
+
+`backend/settings.py` использует Pydantic Settings, читает `.env` относительно
+текущего рабочего каталога и игнорирует неизвестные переменные. Не переносите
+реальные secret values в документацию, логи или OpenAPI snapshots.
+
+### PostgreSQL и JWT
+
+| Переменная | Требование/default | Назначение |
+|---|---|---|
+| `POSTGRES_USER` | обязательна | PostgreSQL user |
+| `POSTGRES_PASSWORD` | обязательна | PostgreSQL password |
+| `POSTGRES_HOST` | обязательна | PostgreSQL host |
+| `POSTGRES_PORT` | `5432` | PostgreSQL port |
+| `POSTGRES_DATABASE` | обязательна | PostgreSQL database |
+| `JWT_SECRET_KEY` | обязательна | Ключ подписи JWT; production-значение должно быть случайным |
+
+### Backend и RAG defaults
+
+| Переменная | Default | Назначение |
+|---|---:|---|
+| `JWT_ALGORITHM` | `HS256` | JWT algorithm |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440` | Срок access token |
+| `CORS_ORIGINS` | `["http://localhost:3000"]` | Явный список origins; credentials включены |
+| `RAG_ENABLED` | `true` | Инициализация и использование RAG |
+| `RAG_EMBEDDING_MODEL` | `BAAI/bge-base-en-v1.5` | Embedding model |
+| `RAG_RERANK_MODEL` | `BAAI/bge-reranker-base` | CrossEncoder |
+| `RAG_LLM_MODEL` | `Qwen/Qwen2.5-Coder-7B-Instruct` | Model name для backend serving |
+| `RAG_LLM_API_URL` | пустая строка | OpenAI-compatible base URL |
+| `RAG_LLM_API_KEY` | пустая строка | API key, если endpoint его требует |
+| `RAG_LLM_TIMEOUT` | `30.0` | Timeout LLM client, секунды |
+| `RAG_TOP_K` | `5` | Финальное число retrieved chunks |
+| `RAG_CHUNK_SIZE` | `1000` | Размер chunk в символах |
+| `RAG_CHUNK_OVERLAP` | `200` | Перекрытие chunks в символах |
+| `RAG_CHROMA_PATH` | `./data/chromadb` | Persistent Chroma path, зависит от cwd |
+| `RAG_CHROMA_COLLECTION` | `docs_fast` | Collection name |
+| `RAG_SOURCE_PATH_PREFIXES` | `["drive/MyDrive/dataset/", "dataset/"]` | Prefixes, удаляемые при DB source mapping |
+| `OUTLIER_DETECTION_ENABLED` | `true` | Проверка тематики первого вопроса |
+| `OUTLIER_CLASSIFIER_PATH` | `./models/pytorch_topic_classifier.joblib` | Joblib classifier path |
+| `OUTLIER_REJECT_OFF_TOPIC` | `true` | Возвращать refusal для off-topic первого вопроса |
+| `CODE_EXECUTOR_URL` | `http://localhost:8002/execute` | Backend → executor URL |
+| `CODE_EXECUTOR_TIMEOUT` | `15` | Timeout выполнения кода, секунды |
+| `CODE_EXECUTOR_MAX_CODE_LENGTH` | `10000` | Backend limit до HTTP-вызова |
+| `CONVERSATION_HISTORY_ENABLED` | `true` | Передавать предыдущие turns в generation |
+| `CONVERSATION_MAX_HISTORY_MESSAGES` | `10` | Максимум ORM `Message` rows в history |
+
+Списки (`CORS_ORIGINS`, `RAG_SOURCE_PATH_PREFIXES`) задавайте в формате,
+принимаемом Pydantic для complex env values, обычно JSON array.
+
+Standalone `rag.Settings` имеет prefix `RAG_`, но некоторые имена отличаются.
+В частности, standalone package читает `RAG_LLM_MODEL_GENERATION`, а backend —
+`RAG_LLM_MODEL`. Не считайте их взаимозаменяемыми.
+
+### Относительные пути
+
+- В Docker рабочий каталог backend — `/app/backend`; volume `./data` смонтирован
+  как `/app/backend/data`, поэтому default Chroma path соответствует compose
+  layout.
+- При локальном запуске из `backend/` bundled index находится по
+  `../data/chromadb`, а не по default `./data/chromadb`.
+- Default `CODE_EXECUTOR_URL` подходит host-run executor, но не контейнерному
+  backend: в Docker нужен service hostname `code-executor`.
+- Compose сейчас не задаёт `CODE_EXECUTOR_URL` явно. Не полагайтесь на случайное
+  значение из локального/tracked `.env`; перед интеграционным запуском проверьте
+  только имя host/path, не выводя secrets.
+
+## Фактический RAG pipeline
+
+Оба message endpoints используют `strategy="query_transform"`, независимо от
+default аргумента `RagService.answer_question()`:
+
+1. Проверяется принадлежность диалога пользователю. Если указан
+   `parent_message_id`, он должен принадлежать тому же диалогу пользователя.
+2. Создаётся и `flush`-ится одна `Message` row, содержащая user question и будущий
+   assistant answer. До успешного RAG она не коммитится.
+3. Из загруженного relationship `dialogue.messages` собирается history: каждая row
+   даёт до двух chat messages (`user`, затем `assistant`). Затем берётся хвост из
+   `CONVERSATION_MAX_HISTORY_MESSAGES` rows, но у relationship нет `order_by`,
+   поэтому хронологический порядок на уровне БД сейчас не гарантирован.
+4. Topic classifier вызывается только для первого сообщения в диалоге. При
+   off-topic и `OUTLIER_REJECT_OFF_TOPIC=true` возвращается готовый refusal без
+   retrieval.
+5. `query_transform` делает два дополнительных LLM-вызова: rewrite запроса и
+   HyDE-ответ.
+6. Vector search выполняется для исходного вопроса, rewrite и HyDE. Кандидаты
+   дедуплицируются по первым 150 символам и rerank-ятся CrossEncoder относительно
+   исходного вопроса; берётся `RAG_TOP_K`.
+7. Основной LLM генерирует ответ по retrieved context и history.
+8. `source` metadata каждого chunk нормализуется и сопоставляется с PostgreSQL
+   `Source` текущего пользователя. При найденной folder path используется её ID;
+   при неизвестной path код оставляет `folder_id=None` и может ошибочно привязать
+   chunk к одноимённому root Source. Остальные несопоставленные chunks не попадают
+   в API `sources`; fallback для неизвестной папки — известный defect.
+9. Chunks группируются по `Source`, вычисляется эвристический relevance score,
+   sources сортируются, а ссылки `[§N]` в полном ответе перенумеровываются.
+10. Для первого сообщения с пустым/default названием выполняется ещё один короткий
+    LLM-вызов для заголовка диалога. Ошибка title generation не отменяет ответ.
+11. Message, sources JSON и возможный title коммитятся в PostgreSQL.
+
+Текущий citation remapper имеет ещё один известный defect: в группе вроде
+`[§1, §2]` номера сначала перенумеровываются как группа, затем часть совпадений
+может пройти standalone-remap повторно. При нетривиальном source order это способно
+создать дубликаты или неверные номера; grouped citations требуют regression test.
+
+CrossEncoder score — raw model output, а итоговый source relevance — внутренняя
+эвристика. Ни то ни другое не следует трактовать как калиброванную вероятность.
+BM25 и RRF в текущем runtime не реализованы. Backend также не передаёт
+`PromptContract` в `rag.answer()`: serving идёт по legacy prompt path.
+
+### Обычный ответ
+
+`POST /api/message` после commit ищет fenced blocks с языком `python` или `py` в
+assistant response и последовательно отправляет их в code-executor. Результаты
+попадают в `code_executions`, но отдельно в БД не сохраняются. Ошибки исполнения
+кода представлены в результате конкретного block и не являются RAG fallback.
+
+### Streaming
+
+`POST /api/message/stream` возвращает `text/event-stream`:
+
+```text
+data: {"type":"chunk","delta":"..."}
+
+data: {"type":"complete","sources":[...],"message_id":123,
+       "parent_message_id":null,"created_at":"..."}
+
+data: [DONE]
 ```
 
-### 4. Message Controller (`api/message/controller.py`)
+При ошибке после открытия stream приходит JSON event `type=error`, затем
+`[DONE]`. Синхронный iterator LLM bridge-ится через worker thread и
+`asyncio.Queue`, однако rewrite/retrieval/rerank выполняются до возврата
+`StreamingResponse` и остаются blocking.
 
-Flow:
-1. Try local RAG service (if enabled)
-2. Fallback to external RAG API (if local fails)
-3. Extract sources from retrieved chunks
-4. Parse and execute code blocks
-5. Return response with sources and code execution results
+Важные особенности текущего contract:
 
-## Setup Instructions
+- raw deltas отправляются до citation remap;
+- полный перенумерованный answer сохраняется в БД, но не повторяется в
+  `complete` event;
+- `complete` отправляется до `db.commit()`;
+- fenced Python blocks автоматически не исполняются; для них frontend использует
+  отдельный `POST /api/code/execute`;
+- cancel/error должен приводить к rollback.
 
-### 1. Install Dependencies
+## HTTP API
 
-The RAG and outlier-detection modules have their own dependencies:
+Swagger UI доступен на `http://localhost:8001/api/docs`, OpenAPI endpoint —
+`http://localhost:8001/openapi.json`. Почти все маршруты требуют
+`Authorization: Bearer <JWT>`.
+
+| Method | Path | Назначение | Auth |
+|---|---|---|---|
+| `POST` | `/api/user/auth` | Вход и выдача JWT | нет |
+| `GET` | `/api/user/me` | Текущий пользователь | да |
+| `PUT` | `/api/user` | Email/username/password | да |
+| `DELETE` | `/api/user` | Деактивация пользователя | да |
+| `POST` | `/api/dialogue` | Создать диалог | да |
+| `GET` | `/api/dialogue` | Список/поиск диалогов | да |
+| `GET` | `/api/dialogue/{dialogue_id}` | Диалог с сообщениями | да |
+| `PUT` | `/api/dialogue/{dialogue_id}` | Переименовать диалог | да |
+| `DELETE` | `/api/dialogue/{dialogue_id}` | Удалить диалог | да |
+| `GET` | `/api/dialogue/queries/pre-generated` | Предзаготовленные вопросы | заявлен без auth |
+| `POST` | `/api/message` | RAG answer + auto-execution Python blocks | да |
+| `POST` | `/api/message/stream` | RAG answer через SSE | да |
+| `POST` | `/api/message/feedback` | `like`/`dislike`, ответ `204` | да |
+| `POST` | `/api/source` | Upload источника | да |
+| `GET` | `/api/source` | List/search/filter/pagination | да |
+| `GET` | `/api/source/{source_id}` | Содержимое источника | да |
+| `GET` | `/api/source/{source_id}/download` | Скачать источник | да |
+| `PATCH` | `/api/source/{source_id}` | Переместить в папку/корень | да |
+| `DELETE` | `/api/source/{source_id}` | Удалить источник | да |
+| `POST` | `/api/folder` | Создать папку | да |
+| `GET` | `/api/folder` | Список папок с document counts | да |
+| `PATCH` | `/api/folder/{folder_id}` | Переместить папку | да |
+| `DELETE` | `/api/folder/{folder_id}` | Удалить папку с contents | да |
+| `POST` | `/api/code/execute` | Authenticated proxy в code-executor | да |
+
+Registration controller существует, но HTTP route регистрации отсутствует.
+
+Точные JSON request/response schemas и validation constraints смотрите в live
+Swagger или в сгенерированных `openapi.json`/`openapi.yaml`. Есть два известных
+разрыва между generated schema и runtime: stream response объявлен как
+`application/json` вместо `text/event-stream`, а download — как JSON вместо
+фактического media type файла. Проверяйте эти endpoints отдельным HTTP smoke.
+
+## PostgreSQL и ownership
+
+`db.py` создаёт таблицы `users`, `dialogues`, `messages`, `folders`, `sources`.
+`init_db()` вызывает `Base.metadata.create_all()` и затем вручную создаёт/обновляет
+PostgreSQL columns, foreign key, `tsvector`, GIN indexes и triggers для English
+full-text search.
+
+Alembic/migration history нет. `create_all()` не изменяет существующие columns, а
+ручной DDL покрывает только явно запрограммированные upgrades. Любое изменение
+schema нужно проверять на уже существующей PostgreSQL БД; SQLite недостаточно для
+FTS и PostgreSQL DDL.
+
+User-owned lookups должны включать `user_id`; чужой id обычно маскируется как
+`404`. Сохраняйте это свойство при изменении controllers. Известная зона риска —
+условия FTS с `AND`/`OR`: list, count и total-size запросы должны иметь одинаковую
+tenant-фильтрацию.
+
+## Источники, folders и ChromaDB
+
+### Upload
+
+Backend принимает расширения `md`, `txt`, `pdf`, `docx` и ограничивает payload
+10 MiB, но фактически весь файл декодируется как UTF-8 text. Бинарные PDF/DOCX не
+парсятся и обычно отклоняются. Upload создаёт источник в корне; перенос в folder —
+отдельный `PATCH`.
+
+PostgreSQL commit происходит до best-effort индексации. Ошибка embedding не
+отменяет upload. Обратная атомарность также отсутствует при delete: ошибка Chroma
+логируется, после чего DB row всё равно удаляется.
+
+### Offline index
+
+`rag.documents.load_documents()` по умолчанию рекурсивно читает только `.md`,
+сортирует paths, удаляет полные дубликаты по MD5 и читает UTF-8. Markdown-aware
+splitter использует заголовки/пустые строки/переносы как separators; chunks
+дедуплицируются по preview + length.
+
+Chroma collection создаётся с cosine distance. Indexed embeddings нормализованы,
+ID детерминирован как позиция + SHA1 prefix. Для совместимости индекса должны
+совпадать corpus, cleaning, chunk parameters, embedding model/normalization,
+metadata schema, collection name и distance metric.
+
+### Критические ограничения текущей реализации
+
+- `rag.vectorstore.index_chunks()` полностью выходит, если collection уже не
+  пуста. Поэтому API upload обычно не добавляет новый документ в существующий
+  index; это не incremental-indexing semantics.
+- Bundled collection содержит legacy metadata без гарантированных `user_id` и
+  `document_id`. Delete по `document_id` не удаляет legacy chunks.
+- Retrieval не передаёт Chroma `where` по `user_id`. Vector search по shared
+  collection не tenant-isolated; DB mapping скрывает часть источников в ответе,
+  но чужой chunk уже мог попасть в LLM context.
+- Перемещение Source/Folder, пересчёт materialized folder paths и удаление folder
+  не синхронизируют Chroma metadata.
+- PostgreSQL и Chroma не участвуют в общей транзакции.
+- Не открывайте и не rebuild/delete tracked `../data/chromadb` для smoke test.
+  Используйте временный каталог и отдельное имя collection.
+
+`backend/scripts/setup_rag.py` — ручной standalone helper. Его dataset/model/
+Chroma paths зависят от cwd, а существующая непустая collection будет пропущена.
+Перед запуском явно проверьте destination; не используйте скрипт для обновления
+bundled index без отдельного решения о rebuild/versioning.
+
+Root scripts `scripts/load_documents.py` и
+`scripts/load_documents_with_folders.py` обращаются к отсутствующему endpoint
+`:8000/embed/document` и не являются актуальным способом наполнения этого backend.
+
+## Запуск
+
+Требуется Python 3.13 и workspace lock `../uv.lock`.
+
+### Docker Compose
+
+Из корня репозитория:
 
 ```bash
-# Install RAG dependencies
-cd ../rag
-pip install -e .
-
-# Install outlier-detection dependencies
-cd ../outlier-detection
-pip install -e .
+docker compose config --quiet
+docker compose up --build postgres code-executor backend frontend
 ```
 
-### 2. Prepare ChromaDB Collection
+До `up` задайте через локальное окружение/secret store обязательные PostgreSQL и
+JWT значения. OpenAI-compatible LLM URL/model/key нужны для работающего RAG-чата,
+но не для CRUD-only запуска с `RAG_ENABLED=false`. Текущий Compose вообще не передаёт
+`CODE_EXECUTOR_URL` из root env; корректный `http://code-executor:8002/execute`
+нужно добавить явным Compose override либо исправлением service environment.
+Не печатайте полный resolved Compose config: он может содержать secrets. Не
+используйте `docker compose down -v` без осознанного разрешения на удаление данных.
 
-You need to index your documents into ChromaDB first:
+Текущий Compose — dev-конфигурация с bind mounts и reload. У неё есть известные
+packaging/security ограничения; это не production deployment.
 
-```python
-from rag import Settings, create_embed_model
-from rag.documents import load_documents, split_documents
-from rag.vectorstore import create_collection, index_chunks
+### Локально
 
-# Load settings
-settings = Settings()
-
-# Load and split documents
-docs = load_documents(settings.dataset_path)  # Load .md files
-chunks = split_documents(docs, chunk_size=1000, chunk_overlap=200)
-
-# Create embedding model
-embed_model = create_embed_model(settings)
-
-# Create ChromaDB collection
-collection = create_collection(settings.chroma_path, settings.chroma_collection)
-
-# Index chunks
-index_chunks(collection, chunks, embed_model)
-```
-
-Or use the existing collection from the root `data/chromadb/` directory.
-
-### 3. (Optional) Train Topic Classifier
-
-If you want outlier detection:
-
-```python
-from outlier_detection import TopicClassifier
-
-# Prepare training texts (PyTorch-related questions)
-pytorch_texts = [
-    "How to create a tensor in PyTorch?",
-    "What is torch.nn.Module?",
-    "How to use DataLoader?",
-    # ... more examples (50-200 recommended)
-]
-
-# Train classifier
-classifier = TopicClassifier(nu=0.05)  # 5% outliers
-classifier.fit(pytorch_texts)
-
-# Save model
-classifier.save("backend/models/pytorch_classifier.joblib")
-```
-
-### 4. Setup LLM API
-
-You need a running LLM API endpoint compatible with OpenAI API format:
-
-**Option A: Use vLLM**
-```bash
-vllm serve Qwen/Qwen2.5-Coder-7B-Instruct \
-  --port 8003 \
-  --max-model-len 4096
-```
-
-**Option B: Use Ollama**
-```bash
-ollama serve
-# Set RAG_LLM_API_URL=http://localhost:11434/v1
-```
-
-**Option C: Use OpenAI API**
-```bash
-# Set RAG_LLM_API_URL=https://api.openai.com/v1
-# Set RAG_LLM_API_KEY=your_openai_api_key
-```
-
-### 5. Start Backend
+Поднять PostgreSQL:
 
 ```bash
-cd backend
-uv run uvicorn app:app --host 0.0.0.0 --port 8001 --reload
+docker compose up -d postgres
 ```
 
-On startup, you should see:
-```
-Starting Knowledge Base RAG Backend...
-✓ Database initialized
-Loading RAG models...
-✓ Loaded chat model: Qwen/Qwen2.5-Coder-7B-Instruct
-✓ Loaded embedding model: BAAI/bge-base-en-v1.5
-✓ Loaded reranker: BAAI/bge-reranker-base
-✓ Loaded ChromaDB collection: docs_fast
-✓ Loaded topic classifier from: ./models/pytorch_classifier.joblib
-✓ RAG service initialized
-✓ Backend started successfully
-```
-
-## Usage
-
-### Send Message API
+Запустить executor на host:
 
 ```bash
-POST /api/message
-Authorization: Bearer <jwt_token>
-
-{
-  "dialogue_id": 1,
-  "message": "How to create a tensor?"
-}
+(cd code-executor && uv run --locked --package code-executor --group dev \
+  uvicorn app:app --host 127.0.0.1 --port 8002 --reload)
 ```
 
-**Response:**
-```json
-{
-  "message_id": 123,
-  "user_message": "How to create a tensor?",
-  "assistant_response": "To create a tensor in PyTorch, use torch.tensor()...",
-  "sources": [
-    "pytorch/docs/tensor.md",
-    "pytorch/docs/creation_ops.md"
-  ],
-  "code_executions": [
-    {
-      "code": "import torch\nx = torch.tensor([1, 2, 3])\nprint(x)",
-      "success": true,
-      "stdout": "tensor([1, 2, 3])\n",
-      "stderr": "",
-      "result": null,
-      "error": null
-    }
-  ],
-  "created_at": "2026-04-11T..."
-}
+Запустить backend из `backend/`:
+
+```bash
+(cd backend && uv run --locked --package backend --group dev \
+  uvicorn app:app --host 0.0.0.0 --port 8001 --reload)
 ```
 
-## Fallback Behavior
+Для RAG host-run явно задайте `RAG_CHROMA_PATH=../data/chromadb`, доступный
+`RAG_LLM_API_URL`, при необходимости `RAG_LLM_API_KEY`, корректный classifier path
+и `CODE_EXECUTOR_URL=http://127.0.0.1:8002/execute`. Для CRUD-only smoke допустим
+временный `RAG_ENABLED=false`.
 
-If local RAG service is unavailable, the system automatically falls back to the external RAG API at `http://localhost:8000/forward`.
+`OUTLIER_DETECTION_ENABLED=false` сейчас не является рабочим способом запустить
+RAG без classifier: `RagService._load_models()` безусловно вызывает
+`TopicClassifier.load(classifier_path)`, даже если передан `None`. Такая ошибка
+оставит backend запущенным, но RAG singleton будет недоступен.
 
-Fallback triggers:
-1. `RAG_ENABLED=false` in settings
-2. RAG service initialization failed
-3. Runtime error during RAG processing
+## Проверки
 
-## Performance
+Backend tests:
 
-### Latency (single query, GPU-accelerated):
-- **Basic retrieval**: ~50ms
-- **Rerank retrieval**: ~150ms (default)
-- **Query transform retrieval**: ~500ms
-- **LLM generation**: 500-2000ms (depends on model and output length)
-
-**Total latency**: ~700-2500ms per question
-
-### Memory Requirements:
-- **Embedding model**: ~500MB
-- **Reranker model**: ~700MB
-- **ChromaDB**: Varies by document count (~1GB for 10k chunks)
-- **LLM**: Depends on model (4-32GB)
-
-### Optimization Tips:
-1. Use GPU for faster inference
-2. Use smaller embedding models for lower memory
-3. Reduce `RAG_TOP_K` for faster retrieval
-4. Use `basic` or `rerank` strategy instead of `query_transform`
-5. Cache frequently asked questions
-
-## Troubleshooting
-
-### Issue: "RAG service not initialized"
-
-**Solution:**
-- Check that ChromaDB collection exists
-- Verify LLM API is running and accessible
-- Check logs for initialization errors
-
-### Issue: Slow responses
-
-**Solution:**
-- Reduce `RAG_TOP_K` value
-- Use `basic` or `rerank` strategy
-- Enable GPU acceleration
-- Check LLM API performance
-
-### Issue: Off-topic questions not filtered
-
-**Solution:**
-- Train topic classifier with more diverse examples
-- Adjust `nu` parameter (lower = stricter)
-- Set `OUTLIER_REJECT_OFF_TOPIC=true` for auto-rejection
-
-### Issue: Poor answer quality
-
-**Solution:**
-- Increase `RAG_TOP_K` for more context
-- Use `query_transform` strategy
-- Check if documents are properly indexed
-- Verify LLM model is appropriate for the task
-
-## Development
-
-### Testing RAG Service
-
-```python
-from services.rag_service import get_rag_service
-
-# Get service
-rag = get_rag_service()
-
-# Test question
-response = rag.answer_question("How to create a tensor?")
-
-print(f"Answer: {response.answer}")
-print(f"On topic: {response.is_on_topic} (confidence: {response.topic_confidence})")
-print(f"Sources: {[c.source for c in response.chunks]}")
+```bash
+(cd backend && uv run --locked --package backend --group dev python -m pytest)
 ```
 
-### Monitoring
+Текущий suite не является green baseline: collection ломает устаревший import
+`generate_dialogue_title`; backend dev dependencies не объявляют `greenlet` для
+async SQLAlchemy; после обхода остаются старые `controller.httpx` mocks,
+устаревшие citation expectations и PostgreSQL FTS test на SQLite. Не скрывайте эти
+проблемы отключением tests и не приписывайте baseline failure своему изменению без
+targeted сравнения.
 
-Key metrics to track:
-- Response latency
-- Retrieval quality (chunk relevance)
-- Off-topic question rate
-- Fallback usage rate
-- User feedback (like/dislike)
+Также отсутствует полноценное покрытие RAG core, folder API, SSE lifecycle и
+реального PostgreSQL/Chroma/model integration. Для RAG unit tests используйте fake
+embedder/LLM и временную Chroma collection; не скачивайте модели.
 
-## References
+После изменения API:
 
-- RAG module: `../rag/`
-- Outlier-detection module: `../outlier-detection/`
-- RAG service: `services/rag_service.py`
-- Message controller: `api/message/controller.py`
+1. запустите подходящие unit/route tests;
+2. для DB/FTS выполните отдельный PostgreSQL smoke;
+3. для SSE проверьте order, error, disconnect, rollback и commit;
+4. для Source проверьте DB и Chroma состояния отдельно;
+5. регенерируйте `openapi.json` и `openapi.yaml` из `app.openapi()` без запуска
+   lifespan и сравните их parsed JSON/YAML представления;
+6. выполните `git diff --check` и просмотрите полный diff.
+
+## Диагностика
+
+### `RAG service not initialized`
+
+Проверьте наличие config keys без вывода значений, resolved Chroma/classifier
+paths, доступность LLM endpoint и startup warnings. Автоматического удалённого
+fallback нет.
+
+### Источник загрузился, но не находится
+
+Сначала сравните PostgreSQL row и Chroma metadata/count. Для непустой collection
+наиболее вероятная причина — ранний выход `index_chunks()`. Не rebuild-ьте общий
+index до выбора совместимой metadata/versioning и стратегии миграции.
+
+### В ответе нет sources или ссылки не совпадают
+
+Проверьте `source` metadata, `RAG_SOURCE_PATH_PREFIXES`, materialized folder path,
+filename и наличие соответствующей user-owned `Source` row. Затем проверяйте
+grouping/sort и citation remap.
+
+### Search работает иначе в тесте и PostgreSQL
+
+SQLite не поддерживает PostgreSQL `tsvector`, `@@`, `plainto_tsquery`, GIN и
+triggers. Подтверждайте FTS поведение на PostgreSQL.
+
+### Code block не исполняется
+
+Streaming endpoint не исполняет blocks. Для non-stream проверьте fenced language
+`python`/`py`, backend length/timeout, `CODE_EXECUTOR_URL` и ограничения AST/
+RestrictedPython в code-executor.

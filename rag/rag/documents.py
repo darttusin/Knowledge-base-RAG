@@ -2,6 +2,7 @@ import glob
 import hashlib
 import logging
 import os
+from collections.abc import Sequence
 
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -22,14 +23,25 @@ def hash_file(filepath: str) -> str:
     return hasher.hexdigest()
 
 
-def load_documents(dataset_path: str) -> list[Document]:
-    md_files = glob.glob(os.path.join(dataset_path, "**/*.md"), recursive=True)
+DEFAULT_EXTENSIONS = ("md",)
+
+
+def load_documents(
+    dataset_path: str,
+    extensions: Sequence[str] = DEFAULT_EXTENSIONS,
+) -> list[Document]:
+    files: list[str] = []
+    for ext in extensions:
+        pattern = os.path.join(dataset_path, f"**/*.{ext.lstrip('.')}")
+        files.extend(glob.glob(pattern, recursive=True))
+    files.sort()  # stable order → stable chunk ids across re-indexing
+
     documents: list[Document] = []
     seen_hashes: set[str] = set()
 
-    logger.info("Found %d .md files", len(md_files))
+    logger.info("Found %d files (%s)", len(files), ", ".join(extensions))
 
-    for file_path in tqdm(md_files, desc="Loading documents"):
+    for file_path in tqdm(files, desc="Loading documents"):
         try:
             file_hash = hash_file(file_path)
             if file_hash in seen_hashes:
@@ -48,7 +60,8 @@ def load_documents(dataset_path: str) -> list[Document]:
                         "folder": os.path.dirname(
                             os.path.relpath(file_path, dataset_path)
                         ),
-                        "file_type": "markdown",
+                        "file_type": os.path.splitext(file_path)[1].lstrip(".")
+                        or "unknown",
                     },
                 )
             )

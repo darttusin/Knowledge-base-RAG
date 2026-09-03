@@ -9,13 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-DEFAULT_SYSTEM_PROMPT = (
-    "You are an expert PyTorch assistant. Answer the user's question using ONLY "
-    "the information provided in the Context. If the Context does not contain "
-    "enough information to answer the question reliably, say so explicitly "
-    "instead of guessing. When showing code, use fenced code blocks with the "
-    "`python` language tag."
-)
+from prompt_contract import GROUNDED_CONTRACT, PromptContract
+
+#: Attach LoRA to every linear layer, whatever the architecture names them.
+#: The explicit tuple below only covers Llama/Qwen-style naming and silently
+#: matches nothing on e.g. Phi (`qkv_proj`) or GPT-NeoX (`query_key_value`).
+ALL_LINEAR = "all-linear"
 
 DEFAULT_LORA_TARGETS = (
     "q_proj",
@@ -42,7 +41,9 @@ class LoraConfig:
     r: int = 16
     alpha: int = 32
     dropout: float = 0.05
-    target_modules: tuple[str, ...] = DEFAULT_LORA_TARGETS
+    #: Either an explicit tuple of module names or the string "all-linear",
+    #: which lets PEFT resolve the right modules for any architecture.
+    target_modules: tuple[str, ...] | str = ALL_LINEAR
     bias: str = "none"
 
 
@@ -50,7 +51,9 @@ class LoraConfig:
 class DataConfig:
     train_jsonl: Path
     val_jsonl: Path
-    system_prompt: str = DEFAULT_SYSTEM_PROMPT
+    #: The prompt format this adapter is being trained under. Saved next to
+    #: the adapter so serving can verify it is using the same one.
+    contract: PromptContract = GROUNDED_CONTRACT
     max_seq_length: int = 4096
 
 

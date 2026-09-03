@@ -1,22 +1,18 @@
 """Convert prepared JSONL into HuggingFace Datasets with chat templates applied.
 
-Input (from `dataset-prep`, RAG-aware):
+Input (from `dataset-synth` or `dataset-prep`):
     {
         "question": "...",
         "answer": "...",
-        "score": 42,
-        "context": "...",          // top-k retrieved PyTorch doc chunks
+        "chunks": [{"id": 1, "source": "...", "text": "..."}],  // preferred
+        "context": "...",          // legacy flat string, still accepted
         "is_adversarial": false    // true for synthetic refusal examples
     }
 
-The user turn is constructed as:
-    Context:
-    {context}
-
-    Question: {question}
-
-So the model is trained to ground its answer in the provided context —
-matching the format used at inference time in the production RAG flow.
+The chat messages are built by the `PromptContract` in `DataConfig`, which
+is the same object serving and evaluation use. Storing chunks structurally
+rather than pre-rendered means one dataset can be trained under different
+contracts without being regenerated.
 
 Output rows fed to SFTTrainer:
     {"text": "<|im_start|>system\\n...<|im_end|>\\n<|im_start|>user\\n...
@@ -27,22 +23,30 @@ from __future__ import annotations
 
 from datasets import Dataset, DatasetDict, load_dataset
 from loguru import logger
+from prompt_contract import PromptContract
 from transformers import PreTrainedTokenizerBase
 
 from lora_train.config import DataConfig
 
 
-def _build_messages(example: dict, system_prompt: str) -> dict:
-    user_content = (
-        f"Context:\n{example['context']}\n\n"
-        f"Question: {example['question']}"
-    )
+def _build_messages(example: dict, contract: PromptContract) -> dict:
+    """Render one row into chat messages using the prompt contract.
+
+    Rows from `dataset-synth` carry `chunks` (structured, contract-agnostic);
+    older rows from `dataset-prep` carry a flat `context` string. Both are
+    rendered through the same contract so training and serving agree.
+    """
+    chunks = example.get("chunks")
+    if chunks:
+        context = contract.render_context(chunks)
+    else:
+        context = str(example.get("context", ""))
     return {
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
-            {"role": "assistant", "content": example["answer"]},
-        ]
+        "messages": contract.build_messages(
+            question=example["question"],
+            context=context,
+            answer=example["answer"],
+        )
     }
 
 
@@ -86,7 +90,7 @@ def build_datasets(
     def _process(split: Dataset) -> Dataset:
         with_messages = split.map(
             _build_messages,
-            fn_kwargs={"system_prompt": config.system_prompt},
+            fn_kwargs={"contract": config.contract},
             remove_columns=split.column_names,
         )
         with_text = with_messages.map(
@@ -98,8 +102,10 @@ def build_datasets(
 
     processed = DatasetDict({split: _process(raw[split]) for split in raw})
     logger.info(
-        "formatted datasets ready: train={n_train} val={n_val}",
+        "formatted datasets ready: train={n_train} val={n_val} contract={c}({fp})",
         n_train=len(processed["train"]),
         n_val=len(processed["validation"]),
+        c=config.contract.name,
+        fp=config.contract.fingerprint(),
     )
     return processed

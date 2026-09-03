@@ -24,6 +24,16 @@ class SynthConfig:
     n_qa_per_chunk: int = 3
     max_workers: int = 8  # concurrent teacher requests
 
+    # === context assembly ===
+    # How many chunks go into one training example. At serving time the
+    # retriever hands the model `top_k` chunks, only one of which is likely
+    # relevant; training on a single gold chunk teaches an easier task than
+    # the one the model actually faces. Set this to the serving top_k.
+    context_chunks: int = 1
+    # Prefer distractors from the same directory as the gold chunk — a
+    # random distractor from an unrelated section is trivially ignorable.
+    near_distractor_fraction: float = 0.7
+
     # === adversarial refusal examples ===
     adversarial_fraction: float = 0.20  # of generated pairs
 

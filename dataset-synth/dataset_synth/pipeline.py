@@ -1,10 +1,19 @@
 """End-to-end synthetic dataset pipeline.
 
-chunks → teacher Q&A (concurrent) → dedup → adversarial → optional SO mix
-→ train/val split → JSONL.
+chunks → teacher Q&A (concurrent) → dedup → context assembly → adversarial
+→ optional SO mix → train/val split → JSONL.
 
-Output schema matches dataset-prep / what lora-train expects:
-    {"question": ..., "answer": ..., "context": ..., "is_adversarial": bool, "source": ...}
+Output schema (consumed by lora-train):
+    {
+        "question": ...,
+        "answer": ...,
+        "chunks": [{"id": 1, "source": ..., "text": ...}],
+        "is_adversarial": bool,
+        "source": ...,
+    }
+
+`chunks` is stored structurally rather than pre-rendered, so one dataset can
+be trained under any prompt contract without being regenerated.
 """
 
 from __future__ import annotations
@@ -13,25 +22,21 @@ import json
 import random
 import re
 import unicodedata
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from loguru import logger
+from prompt_contract import DEFAULT_REFUSALS
 from tqdm import tqdm
 
 from dataset_synth.chunks import Chunk, load_chunks
 from dataset_synth.config import SynthConfig
 from dataset_synth.teacher import Teacher
 
-ADVERSARIAL_ANSWERS = (
-    "Based on the provided context, I cannot answer this question — it does not "
-    "contain the relevant information.",
-    "The provided context does not contain information to answer this question.",
-    "I don't have enough information in the provided context to answer this reliably.",
-    "This question cannot be answered from the given context.",
-    "The context provided is not relevant to this question, so I cannot answer it.",
-)
+# Single source of truth, shared with training and serving.
+ADVERSARIAL_ANSWERS = DEFAULT_REFUSALS
 
 _NORM_RE = re.compile(r"[^a-z0-9\s]+")
 _WS_RE = re.compile(r"\s+")
@@ -44,12 +49,16 @@ class Record:
     context: str
     is_adversarial: bool
     source: str
+    #: The context as a list of chunks, in the order the model will see them.
+    #: Kept structured rather than pre-rendered so the same dataset can be
+    #: trained under any prompt contract without regenerating it.
+    chunks: list[dict] = field(default_factory=list)
 
     def to_json(self) -> dict:
         return {
             "question": self.question,
             "answer": self.answer,
-            "context": self.context,
+            "chunks": self.chunks,
             "is_adversarial": self.is_adversarial,
             "source": self.source,
         }
@@ -100,36 +109,108 @@ def _dedup(records: list[Record]) -> list[Record]:
     return out
 
 
+def _chunk_dict(chunk_id: int, text: str, source: str) -> dict:
+    return {"id": chunk_id, "source": source, "text": text}
+
+
+class _DistractorPool:
+    """Samples wrong-but-plausible chunks to pad a training context.
+
+    Prefers chunks from the same directory as the gold chunk: a distractor
+    pulled from an unrelated section of the docs is trivially ignorable, so
+    training against those teaches the model far less than near-misses do.
+    """
+
+    def __init__(self, chunks: list[Chunk], rng: random.Random) -> None:
+        self._all = chunks
+        self._rng = rng
+        self._by_group: dict[str, list[Chunk]] = defaultdict(list)
+        for c in chunks:
+            self._by_group[self._group_of(c.source)].append(c)
+
+    @staticmethod
+    def _group_of(source: str) -> str:
+        parent = Path(source).parent
+        return parent.name or str(parent)
+
+    def sample_for(self, n: int, gold: Chunk, near_fraction: float) -> list[Chunk]:
+        """Distractors for a gold chunk, grouped by the gold chunk's folder."""
+        near_pool = self._by_group.get(self._group_of(gold.source), [])
+        picked: list[Chunk] = []
+        seen = {gold.text}
+        attempts = 0
+        while len(picked) < n and attempts < max(n, 1) * 20:
+            attempts += 1
+            use_near = near_pool and self._rng.random() < near_fraction  # noqa: S311
+            pool = near_pool if use_near else self._all
+            cand = self._rng.choice(pool)  # noqa: S311
+            if cand.text in seen:
+                continue
+            seen.add(cand.text)
+            picked.append(cand)
+        return picked
+
+
+def _assemble_contexts(records: list[Record], chunks: list[Chunk], cfg: SynthConfig) -> None:
+    """Fill each record's `chunks` with the gold chunk plus distractors.
+
+    The gold chunk lands at a random position, so the model cannot learn
+    "the answer is always in the first snippet" — a shortcut that evaporates
+    the moment a real reranker reorders the context.
+    """
+    rng = random.Random(cfg.seed + 1)  # noqa: S311 - dataset shuffling, not crypto
+    pool = _DistractorPool(chunks, rng)
+    by_text = {c.text: c for c in chunks}
+    n_extra = max(0, cfg.context_chunks - 1)
+
+    for r in records:
+        gold = by_text.get(r.context) or Chunk(text=r.context, source=r.source)
+        distractors = pool.sample_for(n_extra, gold, cfg.near_distractor_fraction)
+        window = [*distractors, gold]
+        rng.shuffle(window)
+        r.chunks = [
+            _chunk_dict(i, c.text, c.source) for i, c in enumerate(window, start=1)
+        ]
+
+    logger.info(
+        "assembled contexts: {k} chunk(s) per example ({e} distractor(s))",
+        k=cfg.context_chunks,
+        e=n_extra,
+    )
+
+
 def _add_adversarial(records: list[Record], chunks: list[Chunk], cfg: SynthConfig) -> list[Record]:
-    rng = random.Random(cfg.seed)
+    rng = random.Random(cfg.seed)  # noqa: S311 - dataset shuffling, not crypto
     n_adv = int(len(records) * cfg.adversarial_fraction)
     if n_adv <= 0 or len(chunks) < 2:
         return records
 
-    chunk_texts = [c.text for c in chunks]
+    pool = _DistractorPool(chunks, rng)
     sampled = rng.sample(records, n_adv)
     adversarial: list[Record] = []
     for r in sampled:
-        # pick a context chunk that is NOT the one that produced this question
-        wrong = rng.choice(chunk_texts)  # noqa: S311
-        for _ in range(3):
-            if wrong != r.context:
-                break
-            wrong = rng.choice(chunk_texts)  # noqa: S311
+        # every chunk in the window is wrong — the gold one is deliberately absent
+        gold = Chunk(text=r.context, source=r.source)
+        wrong = pool.sample_for(cfg.context_chunks, gold, cfg.near_distractor_fraction)
+        if not wrong:
+            continue
         adversarial.append(
             Record(
                 question=r.question,
                 answer=rng.choice(ADVERSARIAL_ANSWERS),  # noqa: S311
-                context=wrong,
+                context=wrong[0].text,
                 is_adversarial=True,
                 source="adversarial",
+                chunks=[
+                    _chunk_dict(i, c.text, c.source) for i, c in enumerate(wrong, start=1)
+                ],
             )
         )
 
     combined = records + adversarial
     rng.shuffle(combined)
     logger.info("added {n} adversarial ({p:.0f}%); total={t}",
-                n=n_adv, p=100 * n_adv / len(combined), t=len(combined))
+                n=len(adversarial), p=100 * len(adversarial) / len(combined), t=len(combined))
     return combined
 
 
@@ -146,18 +227,24 @@ def _load_mix(cfg: SynthConfig, synth_count: int) -> list[Record]:
     with path.open(encoding="utf-8") as f:
         for line in f:
             d = json.loads(line)
+            source = d.get("source", "stackoverflow")
+            context = d.get("context", "")
+            # Rows from dataset-prep carry a flat context string; wrap it as a
+            # single chunk so mixed datasets stay uniform downstream.
+            mix_chunks = d.get("chunks") or [_chunk_dict(1, context, source)]
             rows.append(
                 Record(
                     question=d.get("question", ""),
                     answer=d.get("answer", ""),
-                    context=d.get("context", ""),
+                    context=context,
                     is_adversarial=bool(d.get("is_adversarial", False)),
-                    source=d.get("source", "stackoverflow"),
+                    source=source,
+                    chunks=mix_chunks,
                 )
             )
 
     n_take = int(synth_count * cfg.mix_fraction)
-    rng = random.Random(cfg.seed)
+    rng = random.Random(cfg.seed)  # noqa: S311 - dataset shuffling, not crypto
     if n_take < len(rows):
         rows = rng.sample(rows, n_take)
     logger.info("mixing in {n} StackOverflow rows from {p}", n=len(rows), p=path)
@@ -165,7 +252,7 @@ def _load_mix(cfg: SynthConfig, synth_count: int) -> list[Record]:
 
 
 def _split_and_write(records: list[Record], cfg: SynthConfig) -> dict[str, int]:
-    rng = random.Random(cfg.seed)
+    rng = random.Random(cfg.seed)  # noqa: S311 - dataset shuffling, not crypto
     rng.shuffle(records)
     n_val = max(1, int(len(records) * cfg.val_fraction))
     val, train = records[:n_val], records[n_val:]
@@ -196,6 +283,7 @@ def run_synth(cfg: SynthConfig) -> dict[str, int]:
 
     records = _dedup(records)
     synth_count = len(records)
+    _assemble_contexts(records, chunks, cfg)
     records = _add_adversarial(records, chunks, cfg)
     records.extend(_load_mix(cfg, synth_count))
 
@@ -203,6 +291,7 @@ def run_synth(cfg: SynthConfig) -> dict[str, int]:
     summary.update({
         "chunks_used": len(chunks),
         "synth_pairs": synth_count,
+        "context_chunks": cfg.context_chunks,
         "total_rows": summary["train"] + summary["val"],
     })
     logger.info("synth pipeline done: {s}", s=summary)

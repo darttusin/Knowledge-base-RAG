@@ -1,8 +1,37 @@
 from collections.abc import Sequence
+from dataclasses import asdict
+
+from prompt_contract import PromptContract
 
 from rag.llm import ChatModel
 from rag.models import RetrievedChunk
 from rag.prompts import SYSTEM_INSTRUCTIONS, build_rag_prompt
+
+
+def _build_messages(
+    question: str,
+    chunks: Sequence[RetrievedChunk],
+    history: list[dict] | None,
+    contract: PromptContract | None,
+) -> list[dict]:
+    """Assemble chat messages, honouring a prompt contract when given.
+
+    Without a contract the legacy `build_rag_prompt` format is used, so
+    existing runs stay reproducible. A LoRA adapter must be served with the
+    contract it was trained under — pass the one saved next to its weights.
+    """
+    if contract is not None:
+        context = contract.render_context([asdict(c) for c in chunks])
+        messages = contract.build_messages(question, context)
+        if history:
+            messages[1:1] = history
+        return messages
+
+    messages: list[dict] = [{"role": "system", "content": SYSTEM_INSTRUCTIONS}]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": build_rag_prompt(question, chunks)})
+    return messages
 
 
 def answer(
@@ -10,18 +39,9 @@ def answer(
     question: str,
     chunks: Sequence[RetrievedChunk],
     history: list[dict] | None = None,
+    contract: PromptContract | None = None,
 ) -> str:
-    prompt = build_rag_prompt(question, chunks)
-
-    # Build message list: system + history + current question
-    messages = [{"role": "system", "content": SYSTEM_INSTRUCTIONS}]
-
-    if history:
-        messages.extend(history)
-
-    messages.append({"role": "user", "content": prompt})
-
-    return model.invoke(messages)
+    return model.invoke(_build_messages(question, chunks, history, contract))
 
 
 def answer_without_context(model: ChatModel, question: str) -> str:
@@ -41,15 +61,6 @@ def answer_stream(
     question: str,
     chunks: Sequence[RetrievedChunk],
     history: list[dict] | None = None,
+    contract: PromptContract | None = None,
 ):
-    prompt = build_rag_prompt(question, chunks)
-
-    # Build message list: system + history + current question
-    messages = [{"role": "system", "content": SYSTEM_INSTRUCTIONS}]
-
-    if history:
-        messages.extend(history)
-
-    messages.append({"role": "user", "content": prompt})
-
-    return model.stream(messages)
+    return model.stream(_build_messages(question, chunks, history, contract))

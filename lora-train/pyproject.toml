@@ -26,6 +26,7 @@ dependencies = [
     "loguru>=0.7.3",
     "wandb>=0.18.0,<1.0",
     "huggingface-hub>=0.21.0",
+    "prompt-contract",
 ]
 
 [build-system]
